@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="140" viewBox="0 0 520 140" fill="none">
+  <defs>
+    <linearGradient id="note" x1="20" y1="18" x2="116" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset=".62" stop-color="#d8d8d8"/>
+      <stop offset="1" stop-color="#8f8f98"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="10" width="118" height="118" rx="34" fill="#070708"/>
+  <rect x="1" y="11" width="116" height="116" rx="33" stroke="#ffffff" stroke-opacity=".14" stroke-width="2"/>
+  <path d="M75 32c0-5 4-9 9-10l18-3c5-1 9 3 9 8v19c0 4-3 8-7 9l-16 3v42c0 13-11 24-26 24-13 0-24-8-24-19 0-11 11-20 24-20 4 0 8 1 12 2V32h1Z" fill="url(#note)"/>
+  <path d="M73 56 37 63v45c0 13-11 23-25 23-13 0-23-8-23-19 0-11 10-19 23-19 4 0 8 1 11 2V52c0-5 4-9 8-10l42-7v21Z" fill="url(#note)" opacity=".95"/>
+  <text x="146" y="75" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="800" fill="#f4f4f4">chorus</text>
+  <text x="148" y="104" font-family="Inter, Arial, sans-serif" font-size="15" fill="#9b9b9b">private notes, calls, and quiet conversations</text>
+</svg>
