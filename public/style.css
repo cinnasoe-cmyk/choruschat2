@@ -930,3 +930,81 @@ input[type="range"]{
     grid-template-columns:1fr;
   }
 }
+
+
+/* NORMAL COMPOSER + DM/SERVER VIEW FIX */
+.content-grid,
+.message-panel{
+  min-height:0 !important;
+  height:100% !important;
+}
+
+.message-panel{
+  display:flex !important;
+  flex-direction:column !important;
+}
+
+.reply-banner,
+.typing-line{
+  flex:0 0 auto !important;
+}
+
+.messages{
+  flex:1 1 auto !important;
+  min-height:0 !important;
+  overflow:auto !important;
+}
+
+.composer{
+  flex:0 0 auto !important;
+  height:74px !important;
+  min-height:74px !important;
+  max-height:74px !important;
+  display:grid !important;
+  grid-template-columns:44px minmax(0,1fr) 82px !important;
+  align-items:center !important;
+  gap:10px !important;
+  padding:12px 16px !important;
+}
+
+.composer input{
+  height:46px !important;
+  min-height:46px !important;
+}
+
+.composer button{
+  height:46px !important;
+  min-height:46px !important;
+  max-height:46px !important;
+  align-self:center !important;
+}
+
+.composer .primary-btn.small{
+  width:82px !important;
+  padding:0 !important;
+  display:grid !important;
+  place-items:center !important;
+}
+
+.composer .icon-btn{
+  width:46px !important;
+  min-width:46px !important;
+  height:46px !important;
+}
+
+.soft-empty{
+  box-shadow:none;
+}
+
+@media (max-width:640px){
+  .composer{
+    height:70px !important;
+    min-height:70px !important;
+    max-height:70px !important;
+    grid-template-columns:42px minmax(0,1fr) 68px !important;
+    padding:10px !important;
+  }
+  .composer .primary-btn.small{
+    width:68px !important;
+  }
+}
