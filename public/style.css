@@ -1138,3 +1138,32 @@ body{background:#0a0b0f !important;color:var(--text) !important;}
 }
 
 .inline-editor{display:flex;gap:8px;align-items:center;margin-top:6px}.inline-editor input{flex:1;background:#111217;border:1px solid rgba(255,255,255,.18);border-radius:10px;color:#fff;padding:9px 10px}.inline-editor button{border:1px solid rgba(255,255,255,.18);border-radius:10px;background:#1b1c22;color:#fff;padding:8px 10px;font-weight:800}
+
+
+/* Final call/edit fixes */
+#screenShareBtn.hidden{display:none !important;}
+.call-modal{
+  inset:auto 18px 18px auto !important;
+  width:min(420px, calc(100vw - 36px)) !important;
+  display:block !important;
+  padding:0 !important;
+  background:transparent !important;
+  backdrop-filter:none !important;
+  pointer-events:none !important;
+}
+.call-modal.hidden{display:none !important;}
+.call-card{
+  width:100% !important;
+  max-width:none !important;
+  padding:14px !important;
+  border-radius:18px !important;
+  background:#111216 !important;
+  box-shadow:0 18px 50px rgba(0,0,0,.45) !important;
+  pointer-events:auto !important;
+}
+.call-body{display:none !important;}
+.call-top{padding:0 !important;background:transparent !important;border:0 !important;}
+.call-controls,.incoming{justify-content:flex-start !important;flex-wrap:wrap !important;}
+.inline-editor{display:flex;gap:8px;align-items:flex-start;margin-top:6px}
+.inline-editor textarea{flex:1;min-height:42px;resize:vertical;background:#111217;border:1px solid rgba(255,255,255,.18);border-radius:10px;color:#fff;padding:9px 10px;font:inherit}
+.inline-editor button{border:1px solid rgba(255,255,255,.18);border-radius:10px;background:#1b1c22;color:#fff;padding:8px 10px;font-weight:800}
