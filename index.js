@@ -101,7 +101,7 @@ function publicUser(id) {
     display_name: user.display_name,
     bio: user.bio || "",
     avatar: (!user.avatar || user.avatar === "/logo-mark.svg") ? "/user-default.svg" : user.avatar,
-    status: user.status || "online",
+    status: user.status || "offline",
     tagline: user.tagline || "Listening for echoes."
   };
 }
@@ -556,10 +556,20 @@ app.get("/api/ice", requireAuth, (req, res) => {
   res.json({ iceServers });
 });
 
+const onlineUsers = new Map();
+
 io.on("connection", socket => {
   const uid = Number(socket.request.session?.userId || 0);
   if (!uid) return socket.disconnect(true);
   socket.join(`user:${uid}`);
+  const previousCount = onlineUsers.get(uid) || 0;
+  onlineUsers.set(uid, previousCount + 1);
+  const connectedUser = data.users.find(u => Number(u.id) === uid);
+  if (connectedUser && (!connectedUser.status || connectedUser.status === "offline")) {
+    connectedUser.status = "online";
+    saveData();
+    io.emit("presence:update", { userId: uid, status: connectedUser.status });
+  }
 
   socket.on("presence:set", payload => {
     const me = data.users.find(u => Number(u.id) === uid);
@@ -707,7 +717,19 @@ io.on("connection", socket => {
     });
   });
 
-  socket.on("disconnect", () => {});
+  socket.on("disconnect", () => {
+    const count = Math.max(0, (onlineUsers.get(uid) || 1) - 1);
+    if (count) onlineUsers.set(uid, count);
+    else {
+      onlineUsers.delete(uid);
+      const me = data.users.find(u => Number(u.id) === uid);
+      if (me && me.status !== "offline") {
+        me.status = "offline";
+        saveData();
+        io.emit("presence:update", { userId: uid, status: "offline" });
+      }
+    }
+  });
 });
 
 app.get("*", (_, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
