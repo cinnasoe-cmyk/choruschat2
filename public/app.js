@@ -13,18 +13,6 @@ let typingTimer = null;
 let settings = JSON.parse(localStorage.getItem("chorusSettings") || '{"messageVolume":65,"callVolume":100,"micId":"","speakerId":""}');
 let activeCall = { pc:null, localStream:null, screenStream:null, scope:null, scopeId:null, peerId:null, incoming:null, pendingIce:[], muted:false, wantsScreen:false, connected:false };
 
-function setTopbarCallState() {
-  const inRoom = !!(activeScope && activeScope.type === "chat" && activeChat);
-  $("chatActions")?.classList.toggle("hidden", !inRoom);
-  // Screen sharing belongs inside the active call controls, so the top bar Share button stays hidden.
-  $("screenShareBtn")?.classList.add("hidden");
-  if ($("callBtn")) $("callBtn").textContent = activeCall.pc || activeCall.incoming ? "📞 In call" : "📞 Call";
-}
-
-function setCallStatus(text) {
-  if ($("callStatus")) $("callStatus").textContent = text;
-}
-
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 
@@ -399,7 +387,7 @@ function reactMessage(id, emoji) { socket.emit("message:react", { id, emoji }); 
 function pinMessage(id) { socket.emit("message:pin", { id }); }
 
 function editMessage(id) {
-  const text = $(`msg-${id}`)?.querySelector("p")?.textContent || "";
+  const text = $(`msg-${id}`)?.querySelector(".msg-body")?.textContent || "";
   const body = prompt("Edit message", text);
   if (body) socket.emit("message:edit", { id, body });
 }
@@ -588,69 +576,82 @@ async function iceConfig() {
     { urls: "stun:stun2.l.google.com:19302" },
     { urls: "stun:global.stun.twilio.com:3478" }
   ];
-  const iceServers = [...(data.iceServers || []), ...fallback];
-  return { iceServers, iceCandidatePoolSize: 10 };
+  return { iceServers: [...(data.iceServers || []), ...fallback], iceCandidatePoolSize: 10 };
 }
-async function getUserMediaStream(withVideo = false) {
+
+async function getUserMediaStream() {
   return navigator.mediaDevices.getUserMedia({
     audio: { deviceId: settings.micId ? { exact: settings.micId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    video: withVideo ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false
+    video: false
   });
 }
+
 async function createPeer(targetId) {
   const pc = new RTCPeerConnection(await iceConfig());
   activeCall.pc = pc;
+
   pc.onicecandidate = e => {
     if (e.candidate) socket.emit("call:ice", { scope: activeCall.scope, scopeId: activeCall.scopeId, targetId, candidate: e.candidate });
   };
+
   pc.ontrack = e => {
     const stream = e.streams[0];
-    $("remoteAudio").srcObject = stream;
-    $("remoteAudio").volume = settings.callVolume / 100;
-    if ($("remoteAudio").setSinkId && settings.speakerId) $("remoteAudio").setSinkId(settings.speakerId).catch(() => {});
-    $("remoteAudio").play().catch(() => {});
-    const hasVideo = stream.getVideoTracks().length > 0;
-    $("remoteVideo").srcObject = hasVideo ? stream : null;
-    if (hasVideo) $("remoteVideo").play().catch(() => {});
-    $("callStatus").textContent = hasVideo ? "voice + screen connected" : "voice connected";
+    if (e.track.kind === "audio") {
+      $("remoteAudio").srcObject = stream;
+      $("remoteAudio").volume = settings.callVolume / 100;
+      if ($("remoteAudio").setSinkId && settings.speakerId) $("remoteAudio").setSinkId(settings.speakerId).catch(() => {});
+      $("remoteAudio").play().catch(() => {});
+    }
+    if (e.track.kind === "video" || stream.getVideoTracks().length) {
+      $("remoteVideo").srcObject = stream;
+      $("remoteVideo").play().catch(() => {});
+    }
+    $("callStatus").textContent = stream.getVideoTracks().length ? "voice + screen connected" : "voice connected";
   };
-  pc.onconnectionstatechange = async () => {
+
+  pc.onconnectionstatechange = () => {
+    if (!activeCall.pc) return;
     if (pc.connectionState === "connected") {
       activeCall.connected = true;
       $("callStatus").textContent = "connected";
-      if (activeCall.wantsScreen && !activeCall.screenStream) {
-        try { await startScreenshare(); } catch {}
-      }
     }
-    if (["failed","disconnected","closed"].includes(pc.connectionState)) {
+    if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
       $("callStatus").textContent = pc.connectionState;
-      if (pc.connectionState === 'failed') toast('Call connection failed. If this keeps happening, add TURN variables to your host.');
+      if (pc.connectionState === "failed") toast("Call connection failed. Add TURN_URL, TURN_USERNAME, and TURN_PASSWORD on Render if calls fail outside your Wi-Fi.");
     }
   };
+
   return pc;
 }
-async function attachLocalMedia(withVideo = false) {
-  activeCall.localStream = await getUserMediaStream(withVideo);
-  if (withVideo) {
-    $("localVideo").srcObject = activeCall.localStream;
-    $("localVideo").play().catch(() => {});
-  } else {
-    $("localVideo").srcObject = null;
-  }
+
+async function attachLocalMedia() {
+  if (activeCall.localStream) return activeCall.localStream;
+  activeCall.localStream = await getUserMediaStream();
   activeCall.localStream.getTracks().forEach(track => activeCall.pc.addTrack(track, activeCall.localStream));
+  return activeCall.localStream;
 }
+
+async function sendOffer(targetId) {
+  if (!activeCall.pc) return;
+  const offer = await activeCall.pc.createOffer();
+  await activeCall.pc.setLocalDescription(offer);
+  socket.emit("call:offer", { scope: activeCall.scope, scopeId: activeCall.scopeId, targetId, offer });
+}
+
 function showCall(title, status) {
   $("callModal").classList.remove("hidden");
   $("callTitle").textContent = title;
   $("callStatus").textContent = status;
+  $("incomingControls").classList.add("hidden");
 }
+
 function getCallTarget() {
   if (activeScope?.type === "chat" && activeChat?.members?.length) {
-    const other = activeChat.members.find(m => Number(m.id) !== Number(me.id));
-    return other || null;
+    return activeChat.members.find(m => Number(m.id) !== Number(me.id)) || null;
   }
   return null;
 }
+
 function resetCall(send = true) {
   if (send && activeCall.peerId) socket.emit("call:end", { scope: activeCall.scope, scopeId: activeCall.scopeId, targetId: activeCall.peerId });
   try { activeCall.pc?.close(); } catch {}
@@ -664,35 +665,48 @@ function resetCall(send = true) {
   $("incomingControls").classList.add("hidden");
   $("toggleScreenBtn").textContent = "Share screen";
   $("muteBtn").textContent = "Mute";
-  setTopbarCallState();
 }
-$("callBtn").onclick = () => {
-  if (activeCall.pc || activeCall.incoming) return showCall("Current call", activeCall.connected ? "connected" : "connecting");
-  startCall(false);
-};
-// Top-bar share is intentionally hidden; use the in-call Share screen button.
-$("screenShareBtn").onclick = () => showCall("Current call", activeCall.connected ? "connected" : "start a call first");
-async function startCall(withScreen) {
+
+$("callBtn").onclick = () => startCall();
+if ($("screenShareBtn")) $("screenShareBtn").onclick = () => toast("Start a call first, then use Share screen inside the call.");
+
+async function startCall() {
   if (!activeScope || activeScope.type !== "chat" || !activeChat || activeChat.type !== "dm") return toast("Calls are available in one-on-one DMs.");
   const target = getCallTarget();
   if (!target) return toast("No user found for this call.");
-  activeCall.scope = activeScope.type;
-  activeCall.scopeId = activeScope.id;
-  activeCall.peerId = target.id;
-  activeCall.wantsScreen = !!withScreen;
-  activeCall.connected = false;
-  showCall(`Calling ${target.display_name}`, "ringing...");
-  setTopbarCallState();
-  socket.emit("call:invite", { scope: activeScope.type, scopeId: activeScope.id, targetId: target.id, media: "audio" });
+  try {
+    resetCall(false);
+    activeCall.scope = activeScope.type;
+    activeCall.scopeId = activeScope.id;
+    activeCall.peerId = target.id;
+    showCall(`Calling ${target.display_name}`, "ringing...");
+    activeCall.pc = await createPeer(target.id);
+    await attachLocalMedia();
+    socket.emit("call:invite", { scope: activeScope.type, scopeId: activeScope.id, targetId: target.id, media: "audio" });
+  } catch (err) {
+    toast(err.message || "Could not start the call.");
+    resetCall(false);
+  }
 }
-$("acceptCallBtn").onclick = () => {
+
+$("acceptCallBtn").onclick = async () => {
   const incoming = activeCall.incoming;
   if (!incoming) return;
-  socket.emit("call:accept", { scope: incoming.scope, scopeId: incoming.scopeId, targetId: incoming.from.id });
-  $("incomingControls").classList.add("hidden");
-  setCallStatus("connecting...");
-  setTopbarCallState();
+  try {
+    activeCall.scope = incoming.scope;
+    activeCall.scopeId = incoming.scopeId;
+    activeCall.peerId = incoming.from.id;
+    activeCall.pc = await createPeer(incoming.from.id);
+    await attachLocalMedia();
+    socket.emit("call:accept", { scope: incoming.scope, scopeId: incoming.scopeId, targetId: incoming.from.id });
+    $("incomingControls").classList.add("hidden");
+    $("callStatus").textContent = "connecting";
+  } catch (err) {
+    toast(err.message || "Could not accept the call.");
+    resetCall(false);
+  }
 };
+
 $("declineCallBtn").onclick = () => {
   if (activeCall.incoming) socket.emit("call:decline", { scope: activeCall.incoming.scope, scopeId: activeCall.incoming.scopeId, targetId: activeCall.incoming.from.id });
   resetCall(false);
@@ -705,97 +719,80 @@ $("muteBtn").onclick = () => {
 };
 $("toggleScreenBtn").onclick = async () => {
   if (!activeCall.pc || !activeCall.peerId) return toast("Start a call first.");
-  if (!activeCall.screenStream) {
-    try { await startScreenshare(); }
-    catch (err) { toast("Screen share cancelled."); }
-  } else {
-    await stopScreenshare();
-  }
+  try {
+    if (!activeCall.screenStream) await startScreenshare();
+    else await stopScreenshare();
+  } catch { toast("Screen share cancelled."); }
 };
-async function renegotiateCall() {
-  if (!activeCall.pc || !activeCall.peerId) return;
-  const offer = await activeCall.pc.createOffer();
-  await activeCall.pc.setLocalDescription(offer);
-  socket.emit("call:offer", { scope: activeCall.scope, scopeId: activeCall.scopeId, targetId: activeCall.peerId, offer });
-}
+
 async function startScreenshare() {
-  if (!navigator.mediaDevices?.getDisplayMedia) return toast("Screen share is not supported in this browser.");
   activeCall.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
   const track = activeCall.screenStream.getVideoTracks()[0];
-  const existingSender = activeCall.pc.getSenders().find(s => s.track && s.track.kind === "video");
-  if (existingSender) await existingSender.replaceTrack(track);
-  else activeCall.pc.addTrack(track, activeCall.screenStream);
+  activeCall.pc.addTrack(track, activeCall.screenStream);
   $("localVideo").srcObject = activeCall.screenStream;
   $("localVideo").play().catch(() => {});
   $("toggleScreenBtn").textContent = "Stop sharing";
   track.onended = () => stopScreenshare();
-  await renegotiateCall();
+  await sendOffer(activeCall.peerId);
 }
+
 async function stopScreenshare() {
   if (!activeCall.screenStream) return;
-  activeCall.screenStream.getTracks().forEach(t => t.stop());
+  const tracks = activeCall.screenStream.getTracks();
+  for (const track of tracks) {
+    const sender = activeCall.pc?.getSenders().find(s => s.track === track);
+    if (sender) activeCall.pc.removeTrack(sender);
+    track.stop();
+  }
   activeCall.screenStream = null;
-  const sender = activeCall.pc?.getSenders().find(s => s.track && s.track.kind === "video");
-  if (sender) activeCall.pc.removeTrack(sender);
   $("localVideo").srcObject = null;
   $("toggleScreenBtn").textContent = "Share screen";
-  await renegotiateCall();
+  if (activeCall.peerId) await sendOffer(activeCall.peerId);
 }
 
 function wireCallSocket() {
   socket.on("call:incoming", data => {
-    if (activeCall.pc || activeCall.incoming) {
-      socket.emit("call:decline", { scope: data.scope, scopeId: data.scopeId, targetId: data.from.id });
-      return;
-    }
+    resetCall(false);
     activeCall.scope = data.scope;
     activeCall.scopeId = data.scopeId;
     activeCall.peerId = data.from.id;
     activeCall.incoming = data;
-    activeCall.pendingIce = [];
     showCall(`Incoming call from ${data.from.display_name}`, "incoming voice call");
     $("incomingControls").classList.remove("hidden");
-    setTopbarCallState();
   });
 
   socket.on("call:accepted", async data => {
     try {
-      showCall(`Call with ${data.from.display_name}`, "requesting microphone...");
       activeCall.peerId = data.from.id;
       activeCall.scope = data.scope;
       activeCall.scopeId = data.scopeId;
-      activeCall.pc = await createPeer(data.from.id);
-      await attachLocalMedia(false);
-      setCallStatus("connecting...");
-      await renegotiateCall();
-      setTopbarCallState();
-    } catch (err) {
-      toast(err.message || "Could not start the call.");
-      resetCall(true);
-    }
+      $("callTitle").textContent = `Call with ${data.from.display_name}`;
+      $("callStatus").textContent = "connecting";
+      if (!activeCall.pc) {
+        activeCall.pc = await createPeer(data.from.id);
+        await attachLocalMedia();
+      }
+      await sendOffer(data.from.id);
+    } catch (err) { toast(err.message || "Call failed."); resetCall(true); }
   });
 
   socket.on("call:offer", async data => {
     try {
       activeCall.scope = data.scope;
       activeCall.scopeId = data.scopeId;
-      activeCall.peerId = data.fromUserId || data.from?.id;
+      activeCall.peerId = data.fromUserId;
       if (!activeCall.pc) {
-        activeCall.pc = await createPeer(activeCall.peerId);
-        await attachLocalMedia(false);
+        activeCall.pc = await createPeer(data.fromUserId);
+        await attachLocalMedia();
       }
       await activeCall.pc.setRemoteDescription(new RTCSessionDescription(data.offer));
       for (const c of activeCall.pendingIce) await activeCall.pc.addIceCandidate(new RTCIceCandidate(c));
       activeCall.pendingIce = [];
       const answer = await activeCall.pc.createAnswer();
       await activeCall.pc.setLocalDescription(answer);
-      socket.emit("call:answer", { scope: data.scope, scopeId: data.scopeId, targetId: activeCall.peerId, answer });
-      setCallStatus("connecting...");
-      setTopbarCallState();
-    } catch (err) {
-      toast(err.message || "Could not answer the call.");
-      resetCall(true);
-    }
+      socket.emit("call:answer", { scope: data.scope, scopeId: data.scopeId, targetId: data.fromUserId, answer });
+      $("callStatus").textContent = "connecting";
+    } catch (err) { toast(err.message || "Could not connect call."); resetCall(true); }
   });
 
   socket.on("call:answer", async data => {
@@ -877,11 +874,11 @@ function updateViewMode() {
   const isChat = !!(activeScope && activeScope.type === "chat");
   const isChannel = !!(activeScope && activeScope.type === "channel");
   const isServer = !!activeSpace;
+  $("chatActions")?.classList.toggle("hidden", !isChat);
   $("composer")?.classList.toggle("hidden", !(isChat || isChannel));
   $("newChannelBtn")?.classList.toggle("hidden", !isServer);
   $("newGroupBtn")?.classList.remove("hidden");
   $("serverChannelsSection")?.classList.toggle("hidden", !isServer);
-  setTopbarCallState();
 }
 
 const dmHomeBtn = document.getElementById("dmHomeBtn");
