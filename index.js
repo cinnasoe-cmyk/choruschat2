@@ -602,6 +602,7 @@ io.on("connection", socket => {
     if (payload.answer) out.answer = payload.answer;
     if (payload.candidate) out.candidate = payload.candidate;
     if (typeof payload.muted !== "undefined") out.muted = !!payload.muted;
+    if (typeof payload.speaking !== "undefined") out.speaking = !!payload.speaking;
 
     const mapped = event === "invite" ? "incoming" :
       event === "accept" ? "accepted" :
@@ -611,7 +612,7 @@ io.on("connection", socket => {
     notifyUser(targetId, `call:${mapped}`, out);
   }
 
-  ["invite","accept","decline","offer","answer","ice","end","mute"].forEach(name => {
+  ["invite","accept","decline","offer","answer","ice","end","mute","speaking"].forEach(name => {
     socket.on(`call:${name}`, payload => {
       payload = payload || {};
       if (name === "invite" || name === "end") {
