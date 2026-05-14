@@ -1008,3 +1008,42 @@ input[type="range"]{
     width:68px !important;
   }
 }
+
+
+/* DM home / server visibility / default profile fixes */
+.brand-button{
+  width:48px;
+  height:48px;
+  padding:0;
+  display:grid;
+  place-items:center;
+  background:transparent;
+  border:0;
+  box-shadow:none;
+}
+.brand-button:hover{
+  background:rgba(255,255,255,.08);
+  border-radius:16px;
+}
+.brand-button .rail-brand{
+  width:48px;
+  height:48px;
+}
+.topbar-actions.hidden,
+#serverChannelsSection.hidden,
+#composer.hidden,
+#newChannelBtn.hidden{
+  display:none !important;
+}
+#chatActions{
+  flex:0 0 auto;
+}
+#chatActions button{
+  min-width:68px;
+}
+.self-card img[src="/user-default.svg"],
+.row-btn img[src="/user-default.svg"],
+.big-avatar[src="/user-default.svg"]{
+  background:#09090a;
+  border:1px solid rgba(255,255,255,.10);
+}
