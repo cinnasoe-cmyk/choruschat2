@@ -187,7 +187,7 @@ async function refreshFriends() {
   const data = await api("/api/friends");
   friends = data.friends;
   $("friendList").innerHTML = friends.map(friend => `
-    <button class="row-btn" type="button" onclick="openDM(${friend.id})">
+    <button class="row-btn" type="button" onclick="openDM(${friend.id}); closeFriendsTab()">
       <img src="${friend.avatar}" alt="">
       <div class="row-meta"><b>${esc(friend.display_name)}</b><small>@${esc(friend.username)} · ${esc(friend.status || 'online')}</small></div>
     </button>
@@ -211,6 +211,7 @@ function refreshSidebarBits() {
 }
 
 function selectSpace(spaceId) {
+  closeFriendsTab();
   activeSpace = spaces.find(s => Number(s.id) === Number(spaceId)) || null;
   activeChannel = null;
   activeChat = null;
@@ -841,10 +842,66 @@ function wireCallSocket() {
 }
 
 
+function setFriendsTabMode(mode = "list") {
+  const tab = $("friendsTab");
+  if (!tab) return;
+  tab.classList.remove("show-list", "show-add", "show-requests");
+  tab.classList.add(mode === "add" ? "show-add" : mode === "requests" ? "show-requests" : "show-list");
+  $("friendsTabTitle").textContent = mode === "requests" ? "Message Requests" : mode === "add" ? "Add Friend" : "Friends";
+  document.querySelectorAll(".friends-inner-tabs button").forEach(btn => btn.classList.remove("active"));
+  if (mode === "add") $("friendsAddMode")?.classList.add("active");
+  else if (mode === "requests") $("friendsRequestsMode")?.classList.add("active");
+  else $("friendsListMode")?.classList.add("active");
+  $("friendsNavBtn")?.classList.toggle("active", mode !== "requests");
+  $("requestsNavBtn")?.classList.toggle("active", mode === "requests");
+}
+
+function openFriendsTab(mode = "list") {
+  const tab = $("friendsTab");
+  if (!tab) return;
+  tab.classList.remove("hidden");
+  setFriendsTabMode(mode);
+  refreshFriends();
+}
+
+function closeFriendsTab() {
+  const tab = $("friendsTab");
+  if (!tab) return;
+  tab.classList.add("hidden");
+  $("friendsNavBtn")?.classList.remove("active");
+  $("requestsNavBtn")?.classList.remove("active");
+}
+
+function toggleFriendsTab() {
+  const tab = $("friendsTab");
+  if (!tab) return;
+  if (tab.classList.contains("hidden")) openFriendsTab("list");
+  else closeFriendsTab();
+}
+
+const friendsTabBtn = document.getElementById("friendsTabBtn");
+if (friendsTabBtn) friendsTabBtn.addEventListener("click", () => openFriendsTab("list"));
+const friendsNavBtn = document.getElementById("friendsNavBtn");
+if (friendsNavBtn) friendsNavBtn.addEventListener("click", () => openFriendsTab("list"));
+const requestsNavBtn = document.getElementById("requestsNavBtn");
+if (requestsNavBtn) requestsNavBtn.addEventListener("click", () => openFriendsTab("requests"));
+const friendsListMode = document.getElementById("friendsListMode");
+if (friendsListMode) friendsListMode.addEventListener("click", () => setFriendsTabMode("list"));
+const friendsAddMode = document.getElementById("friendsAddMode");
+if (friendsAddMode) friendsAddMode.addEventListener("click", () => setFriendsTabMode("add"));
+const friendsRequestsMode = document.getElementById("friendsRequestsMode");
+if (friendsRequestsMode) friendsRequestsMode.addEventListener("click", () => setFriendsTabMode("requests"));
+const closeFriendsTabBtn = document.getElementById("closeFriendsTab");
+if (closeFriendsTabBtn) closeFriendsTabBtn.addEventListener("click", closeFriendsTab);
+
+
 window.selectSpace = selectSpace;
 window.openChannel = openChannel;
 window.openChat = openChat;
 window.openDM = openDM;
+window.closeFriendsTab = closeFriendsTab;
+window.openFriendsTab = openFriendsTab;
+window.setFriendsTabMode = setFriendsTabMode;
 window.respondFriend = respondFriend;
 window.replyTo = replyTo;
 window.clearReply = clearReply;
@@ -888,7 +945,7 @@ function showDMHome() {
     <div class="empty-state">
       <img src="/logo-mark.svg" alt="">
       <h2>Your messages</h2>
-      <p>Add a friend, accept a request, or create a group chat. Servers stay hidden until you open one.</p>
+      <p>Pick a DM or group chat. Open the Friends tab when you want to add someone or check requests.</p>
     </div>
   `;
   renderPinned();
@@ -900,10 +957,15 @@ function updateViewMode() {
   const isChat = !!(activeScope && activeScope.type === "chat");
   const isChannel = !!(activeScope && activeScope.type === "channel");
   const isServer = !!activeSpace;
+  const appShell = $("app");
+  if (appShell) {
+    appShell.classList.toggle("server-mode", isServer);
+    appShell.classList.toggle("dm-mode", !isServer);
+  }
   $("chatActions")?.classList.toggle("hidden", !isChat);
   $("composer")?.classList.toggle("hidden", !(isChat || isChannel));
   $("newChannelBtn")?.classList.toggle("hidden", !isServer);
-  $("newGroupBtn")?.classList.remove("hidden");
+  $("newGroupBtn")?.classList.toggle("hidden", isServer);
   $("serverChannelsSection")?.classList.toggle("hidden", !isServer);
 }
 
