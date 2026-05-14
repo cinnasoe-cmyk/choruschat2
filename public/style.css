@@ -2193,3 +2193,78 @@ body{background:#0a0b0f !important;color:var(--text) !important;}
   transform:none !important;
   filter:brightness(0) invert(1) !important;
 }
+
+
+/* Status polish: Discord-like presence dots */
+.presence-dot{background:#68718c!important;}
+.presence-dot.online{background:#3ed49a!important;}
+.presence-dot.idle{background:#f5c15d!important;}
+.presence-dot.dnd{background:#ff4f65!important;}
+.presence-dot.offline{background:#68718c!important;}
+
+/* Keep incoming call accept/decline buttons centered inside the call area */
+.message-panel > .call-modal.incoming-call{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+}
+.message-panel > .call-modal.incoming-call .call-card{
+  display:grid!important;
+  grid-template-rows:auto 1fr auto!important;
+  justify-items:center!important;
+  align-items:center!important;
+  width:min(620px,100%)!important;
+  margin:0 auto!important;
+}
+.message-panel > .call-modal.incoming-call .incoming{
+  position:static!important;
+  inset:auto!important;
+  width:auto!important;
+  margin:12px auto 0!important;
+  display:flex!important;
+  justify-content:center!important;
+  align-items:center!important;
+  gap:14px!important;
+  transform:none!important;
+  right:auto!important;
+  left:auto!important;
+}
+.message-panel > .call-modal.incoming-call .incoming-call-btn{
+  position:static!important;
+  transform:none!important;
+  margin:0!important;
+}
+
+/* Discord-style user profile popover from chat avatars */
+.msg .avatar.profile-pop-trigger{cursor:pointer;transition:filter .12s ease, transform .12s ease;}
+.msg .avatar.profile-pop-trigger:hover{filter:brightness(1.12);transform:translateY(-1px);}
+.user-profile-popover{
+  position:fixed;
+  width:310px;
+  z-index:1000;
+  background:#0f1014;
+  border:1px solid #242630;
+  border-radius:10px;
+  box-shadow:0 22px 70px rgba(0,0,0,.72);
+  overflow:hidden;
+  animation:userPopIn .14s ease-out both;
+}
+.user-profile-popover.hidden{display:none!important;}
+@keyframes userPopIn{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+.user-pop-banner{height:74px;background:linear-gradient(135deg,#050506,#15161b 55%,#000);border-bottom:1px solid #20222a;}
+.user-pop-body{position:relative;padding:0 18px 18px;display:grid;gap:8px;}
+.user-pop-avatar-wrap{position:relative;width:88px;height:88px;margin-top:-44px;}
+.user-pop-avatar-wrap > img{width:88px;height:88px;border-radius:50%;object-fit:cover;background:#0a0b0e;border:6px solid #0f1014;box-shadow:0 12px 32px rgba(0,0,0,.55);}
+.user-pop-avatar-wrap .presence-dot{right:4px!important;bottom:5px!important;width:16px!important;height:16px!important;border:5px solid #0f1014!important;}
+.user-pop-round{position:absolute;top:12px;width:34px;height:34px;border-radius:50%;border:1px solid #252832;background:#06070a;display:grid;place-items:center;cursor:pointer;color:#fff;font-weight:900;}
+.user-pop-round:hover{background:#181a21;}
+.user-pop-round img{width:16px;height:16px;filter:brightness(0) invert(1);}
+#userPopAddBtn{right:56px;}
+#userPopMoreBtn{right:16px;font-size:14px;letter-spacing:1px;}
+.user-profile-popover h2{margin:4px 0 0;color:#fff;font-size:22px;line-height:1.05;}
+.user-profile-popover p{margin:0;}
+#userPopUser{color:#c5c8d2;font-size:13px;font-weight:700;}
+.user-pop-bio{margin-top:8px!important;color:#f0f1f5;font-size:14px;line-height:1.35;}
+.user-pop-status-line{margin-top:7px;padding-top:12px;border-top:1px solid #242630;color:#aeb3c0;font-size:13px;text-transform:capitalize;}
+.user-pop-message{margin-top:10px;height:44px;border:0;border-radius:8px;background:#202127;color:#e8e9ee;text-align:left;padding:0 14px;font-weight:800;cursor:pointer;}
+.user-pop-message:hover{background:#2a2c33;}
