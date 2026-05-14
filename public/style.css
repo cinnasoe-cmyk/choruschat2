@@ -2136,47 +2136,60 @@ body{background:#0a0b0f !important;color:var(--text) !important;}
 .message-actions button:has(img:only-child) img{margin-right:0;}
 .reply-icon img{width:13px;height:13px;filter:brightness(0) invert(1);opacity:.65;}
 
-/* Server invite cards sent through DMs */
-.server-invite-msg .msg-main { max-width: 520px; }
-.server-invite-card {
-  margin-top: 6px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: min(480px, 100%);
-  padding: 14px;
-  border: 1px solid rgba(255,255,255,.12);
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(255,255,255,.065), rgba(255,255,255,.025));
-  box-shadow: 0 16px 38px rgba(0,0,0,.28);
+/* Fix: incoming call accept/decline icon buttons should not overlap or look clipped */
+.message-panel > .call-modal .incoming{
+  position:relative !important;
+  z-index:5 !important;
+  gap:12px !important;
+  pointer-events:auto !important;
 }
-.server-invite-icon {
-  width: 46px;
-  height: 46px;
-  border-radius: 16px;
-  display: grid;
-  place-items: center;
-  background: #0f1014;
-  border: 1px solid rgba(255,255,255,.12);
-  flex: 0 0 auto;
+.message-panel > .call-modal .incoming-call-btn{
+  width:46px !important;
+  min-width:46px !important;
+  height:46px !important;
+  min-height:46px !important;
+  border-radius:50% !important;
+  padding:0 !important;
+  display:inline-grid !important;
+  place-items:center !important;
+  border:0 !important;
+  cursor:pointer !important;
+  pointer-events:auto !important;
 }
-.server-invite-icon img { width: 28px; height: 28px; object-fit: contain; }
-.server-invite-copy { min-width: 0; display: grid; gap: 2px; flex: 1; }
-.server-invite-copy small { color: var(--muted); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; font-size: 10px; }
-.server-invite-copy b { color: var(--text); font-size: 15px; }
-.server-invite-copy span { color: var(--muted); font-size: 12px; }
-.server-invite-join {
-  border: 0;
-  border-radius: 11px;
-  padding: 9px 14px;
-  background: #f4f4f5;
-  color: #08080a;
-  font-weight: 900;
-  cursor: pointer;
+.message-panel > .call-modal .incoming-call-btn:disabled{
+  opacity:.55 !important;
+  cursor:wait !important;
 }
-.server-invite-join:disabled {
-  cursor: default;
-  background: rgba(255,255,255,.14);
-  color: rgba(255,255,255,.55);
+.message-panel > .call-modal .incoming-call-btn img{
+  width:19px !important;
+  height:19px !important;
+  object-fit:contain !important;
+  display:block !important;
+  filter:brightness(0) invert(1) !important;
+  border:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
 }
-.incoming-call-btn:disabled { opacity: .65; cursor: wait; }
+.message-panel > .call-modal .incoming-call-btn.accept{background:#3ba55d !important;}
+.message-panel > .call-modal .incoming-call-btn.decline{background:#e23c4f !important;}
+
+/* Fix the server/group icon inside the rounded header button */
+#newGroupBtn,
+#newChannelBtn{
+  display:grid !important;
+  place-items:center !important;
+  line-height:1 !important;
+  overflow:hidden !important;
+}
+#newGroupBtn img,
+.header-actions #newGroupBtn img{
+  width:17px !important;
+  height:17px !important;
+  max-width:17px !important;
+  max-height:17px !important;
+  object-fit:contain !important;
+  display:block !important;
+  margin:0 !important;
+  transform:none !important;
+  filter:brightness(0) invert(1) !important;
+}
