@@ -1,885 +1,288 @@
-
 let me = null;
 let socket = null;
-let spaces = [];
 let chats = [];
 let friends = [];
-let activeSpace = null;
-let activeChannel = null;
-let activeChat = null;
-let activeScope = null;
-let replyTarget = null;
-let typingTimer = null;
-let settings = JSON.parse(localStorage.getItem("chorusSettings") || '{"messageVolume":65,"callVolume":100,"micId":"","speakerId":""}');
-let activeCall = { pc:null, localStream:null, screenStream:null, scope:null, scopeId:null, peerId:null, incoming:null, pendingIce:[], muted:false, wantsScreen:false, connected:false };
+let active = null;
 
-const $ = id => document.getElementById(id);
-const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+let call = freshCall();
+let settings = JSON.parse(localStorage.getItem("chorusSettings") || '{"msg":60,"call":100,"mic":"","speaker":""}');
+
+function freshCall() {
+  return { pc:null, local:null, screen:null, chatId:null, peer:null, peerUser:null, incoming:null, pending:[], muted:false, sharing:false, state:"idle" };
+}
+function $(id){ return document.getElementById(id); }
+function esc(value){ return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]); }
+function saveSettings(){ localStorage.setItem("chorusSettings", JSON.stringify(settings)); }
 
 async function api(url, options = {}) {
-  const headers = options.headers || {};
-  const res = await fetch(url, { credentials: "include", ...options, headers: { "Content-Type": "application/json", ...headers } });
+  const isForm = options.body instanceof FormData;
+  const headers = isForm ? (options.headers || {}) : { "Content-Type":"application/json", ...(options.headers || {}) };
+  const res = await fetch(url, { credentials:"include", ...options, headers });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
 }
+function toast(text){ const el=document.createElement("div"); el.className="toast"; el.textContent=text; $("toasts").appendChild(el); setTimeout(()=>el.remove(),4000); }
+function beep(){ try{ const audio=new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="); audio.volume=settings.msg/100; audio.play().catch(()=>{}); }catch{} }
 
-function toast(text) {
-  const el = document.createElement("div");
-  el.className = "toast";
-  el.textContent = text;
-  $("toasts").appendChild(el);
-  setTimeout(() => el.remove(), 4000);
-}
+async function boot(){ try{ const data=await api("/api/me"); me=data.user; showApp(); }catch{ showAuth(); } }
+function showAuth(){ $("auth").classList.remove("hide"); $("app").classList.add("hide"); }
+function showApp(){ $("auth").classList.add("hide"); $("app").classList.remove("hide"); renderMe(); connectSocket(); refreshFriends(); refreshChats(); loadDevices(); }
+function renderMe(){ $("selfPic").src=me.avatar; $("profilePic").src=me.avatar; $("selfName").textContent=me.display_name; $("selfUser").textContent="@"+me.username; $("displayName").value=me.display_name; $("bio").value=me.bio||""; }
 
-function saveSettings() { localStorage.setItem("chorusSettings", JSON.stringify(settings)); }
-function playPing() {
-  try {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.frequency.value = 710;
-    gain.gain.value = Math.max(.03, settings.messageVolume / 100 * .08);
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.start(); osc.stop(ctx.currentTime + 0.08);
-  } catch {}
-}
-
-async function boot() {
-  try {
-    const data = await api("/api/me");
-    me = data.user;
-    showApp();
-  } catch {
-    $("auth").classList.remove("hidden");
-  }
-}
-
-function showApp() {
-  $("auth").classList.add("hidden");
-  $("app").classList.remove("hidden");
-  renderSelf();
-  connectSocket();
-  refreshEverything();
-  loadDevices();
-}
-
-function renderSelf() {
-  $("selfAvatar").src = me.avatar;
-  $("profilePreview").src = me.avatar;
-  $("selfName").textContent = me.display_name;
-  $("selfUsername").textContent = "@" + me.username;
-  $("selfStatus").textContent = me.status;
-  $("profileDisplay").value = me.display_name;
-  $("profileTagline").value = me.tagline || "";
-  $("profileBio").value = me.bio || "";
-  $("profileStatus").value = me.status || "online";
-}
-
-function connectSocket() {
+function connectSocket(){
   if (socket) socket.disconnect();
-  socket = io({ withCredentials: true });
-
+  socket = io({ withCredentials:true });
   socket.on("friends:update", refreshFriends);
   socket.on("chats:update", refreshChats);
-  socket.on("spaces:update", refreshSpaces);
-  socket.on("presence:update", ({ userId, status }) => {
-    if (Number(userId) === Number(me.id)) { me.status = status; renderSelf(); }
-    refreshFriends();
-    if (activeScope) renderMembers();
-  });
-
-  socket.on("message:new", msg => {
-    if (activeScope && msg.scope === activeScope.type && Number(msg.scope_id) === Number(activeScope.id)) appendMessage(msg);
-    else playPing();
-    refreshSidebarBits();
-  });
-
-  socket.on("message:update", msg => {
-    const el = $(`msg-${msg.id}`);
-    if (el) el.outerHTML = messageHTML(msg);
-    renderPinned();
-  });
-
-  socket.on("typing:update", payload => {
-    if (activeScope && payload.scope === activeScope.type && Number(payload.scopeId) === Number(activeScope.id) && Number(payload.user.id) !== Number(me.id)) {
-      $("typingLine").textContent = payload.active ? `${payload.user.display_name} is typing...` : "";
-    }
-  });
-
-  socket.on("messages:cleared", payload => {
-    if (activeScope && payload.scope === activeScope.type && Number(payload.scopeId) === Number(activeScope.id)) {
-      $("messages").innerHTML = "";
-      renderPinned();
-    }
-  });
-
+  socket.on("message:new", msg => { if (active && Number(msg.chat_id) === Number(active.id)) addMessage(msg); else beep(); refreshChats(); });
+  socket.on("message:update", updateMessage);
+  socket.on("messages:cleared", data => { if (active && Number(data.chatId) === Number(active.id)) $("messages").innerHTML = ""; });
   wireCallSocket();
 }
 
-async function refreshEverything() {
-  await Promise.all([refreshSpaces(), refreshChats(), refreshFriends()]);
-  if (!activeScope) {
-    if (chats[0]) {
-      openChat(chats[0].id);
-    } else {
-      showDMHome();
-    }
-  }
-  updateViewMode();
-}
-
-async function refreshSpaces() {
-  const data = await api("/api/spaces");
-  spaces = data.spaces || [];
-  $("spaceList").innerHTML = spaces.map(space => `
-    <button class="space-pill ${activeSpace && Number(activeSpace.id) === Number(space.id) ? 'active' : ''}" onclick="selectSpace(${space.id})" title="${esc(space.name)}">
-      <img src="${space.icon || "/logo-mark.svg"}" alt="">
-    </button>
-  `).join("");
-  if (activeSpace) {
-    activeSpace = spaces.find(s => Number(s.id) === Number(activeSpace.id)) || null;
-  }
-  renderSpaceSidebar();
-  updateViewMode();
-}
-
-function renderSpaceSidebar() {
-  const section = $("serverChannelsSection");
-  if (activeSpace) {
-    $("activeSpaceName").textContent = activeSpace.name;
-    if (section) section.classList.remove("hidden");
-    $("channelList").innerHTML = (activeSpace.channels || []).length ? activeSpace.channels.map(ch => `
-      <button class="row-btn ${activeChannel && Number(activeChannel.id) === Number(ch.id) ? 'active' : ''}" type="button" onclick="openChannel(${ch.id})">
-        <div class="row-meta"><b># ${esc(ch.name)}</b><small>${esc(activeSpace.name)} channel</small></div>
-      </button>
-    `).join("") : `<div class="soft-empty">No channels yet. Tap + to create one.</div>`;
-  } else {
-    $("activeSpaceName").textContent = "messages";
-    if (section) section.classList.add("hidden");
-    $("channelList").innerHTML = "";
-  }
-  updateViewMode();
-}
-
-async function refreshChats() {
-  const data = await api("/api/chats");
-  chats = data.chats;
-  $("chatList").innerHTML = chats.map(chat => `
-    <button class="row-btn ${activeChat && Number(activeChat.id) === Number(chat.id) ? 'active' : ''}" type="button" onclick="openChat(${chat.id})">
-      <img src="${chat.avatar}" alt="">
-      <div class="row-meta"><b>${esc(chat.title)}</b><small>${esc(chat.last ? chat.last.body : 'No messages yet')}</small></div>
-    </button>
-  `).join("");
-}
-
-async function refreshFriends() {
+async function refreshFriends(){
   const data = await api("/api/friends");
   friends = data.friends;
-  $("friendList").innerHTML = friends.map(friend => `
-    <button class="row-btn" type="button" onclick="openDM(${friend.id})">
-      <img src="${friend.avatar}" alt="">
-      <div class="row-meta"><b>${esc(friend.display_name)}</b><small>@${esc(friend.username)} · ${esc(friend.status || 'online')}</small></div>
-    </button>
-  `).join("");
-  $("requests").innerHTML = data.incoming.map(req => `
-    <div class="request-card">
-      <img src="${req.avatar}" style="width:40px;height:40px;border-radius:14px" alt="">
-      <div class="row-meta"><b>${esc(req.display_name)}</b><small>@${esc(req.username)}</small></div>
-      <button type="button" onclick="respondFriend(${req.request_id}, 'accept')">Accept</button>
-      <button type="button" class="danger" onclick="respondFriend(${req.request_id}, 'decline')">Decline</button>
-    </div>
-  `).join("");
+  $("friendList").innerHTML = friends.map(userRow).join("");
+  $("requests").innerHTML = data.incoming.map(req => `<div class="request"><b>${esc(req.display_name)}</b><small>@${esc(req.username)}</small><br><button onclick="friendRespond(${req.request_id}, 'accept')">Accept</button><button class="danger" onclick="friendRespond(${req.request_id}, 'decline')">Decline</button></div>`).join("");
   renderGroupFriends();
+}
+async function refreshChats(){
+  const data = await api("/api/chats");
+  chats = data.chats;
+  $("chatList").innerHTML = chats.map(chat => `<button class="row ${active && active.id === chat.id ? "active" : ""}" onclick="openChat(${chat.id})"><img src="${esc(chat.avatar)}"><div><b>${esc(chat.title)}</b><small>${esc(chat.last ? chat.last.body : "No messages yet")}</small></div></button>`).join("");
+  if (active) active = chats.find(c => c.id === active.id) || active;
+}
+function userRow(user){ return `<button class="row" onclick="openDM(${user.id})"><img src="${esc(user.avatar)}"><div><b>${esc(user.display_name)}</b><small>@${esc(user.username)} · online</small></div></button>`; }
+function openDM(id){ const chat = chats.find(item => item.type === "dm" && item.members.some(member => member.id === id)); if (!chat) return toast("DM opens after the friend request is accepted."); openChat(chat.id); }
+async function openChat(id){
+  active = chats.find(chat => chat.id === id);
+  if (!active) return;
+  $("side").classList.remove("open");
+  $("chatTitle").textContent = active.title;
+  $("chatPic").src = active.avatar || "/default-avatar.svg";
+  $("chatSub").textContent = active.members.map(m => m.display_name).join(", ");
+  $("msgInput").placeholder = `Message @${active.title}`;
   renderMembers();
-}
-
-function refreshSidebarBits() {
+  await refreshMessages();
   refreshChats();
-  if (activeScope?.type === "channel") loadMessages("channel", activeScope.id, false);
-  else if (activeScope?.type === "chat") loadMessages("chat", activeScope.id, false);
 }
-
-function selectSpace(spaceId) {
-  activeSpace = spaces.find(s => Number(s.id) === Number(spaceId)) || null;
-  activeChannel = null;
-  activeChat = null;
-  activeScope = null;
-  replyTarget = null;
-  renderSpaceSidebar();
-  refreshSpaces();
-  refreshChats();
-  if (activeSpace) {
-    setRoomHeader(activeSpace.name, "Select a channel from this server.", "/logo-mark.svg");
-    $("messages").innerHTML = `
-      <div class="empty-state">
-        <img src="/logo-mark.svg" alt="">
-        <h2>${esc(activeSpace.name)}</h2>
-        <p>Choose a channel on the left, or tap the music-note logo to return to your messages.</p>
-      </div>
-    `;
-    renderPinned();
-    renderMembers();
-    updateViewMode();
-  }
+function renderMembers(){
+  const members = active ? active.members : [];
+  $("memberList").innerHTML = members.map(m => `<div class="member"><img src="${esc(m.avatar)}"><div><b>${esc(m.display_name)}</b><small>@${esc(m.username)}</small></div></div>`).join("");
 }
-
-function openDM(userId) {
-  const chat = chats.find(c => c.type === "dm" && c.members.some(m => Number(m.id) === Number(userId)));
-  if (!chat) return toast("The DM appears after the request is accepted.");
-  openChat(chat.id);
+async function refreshMessages(){
+  const data = await api(`/api/chats/${active.id}/messages`);
+  $("messages").innerHTML = "";
+  data.messages.forEach(addMessage);
+  if (!data.messages.length) $("messages").innerHTML = `<div class="emptyState"><div><h1>${esc(active.title)}</h1><p>This is the beginning of your conversation.</p></div></div>`;
+  scrollEnd();
 }
-
-function setRoomHeader(title, subtitle, avatar) {
-  $("roomTitle").textContent = title;
-  $("roomSubtitle").textContent = subtitle;
-  $("roomAvatar").src = avatar || "/logo-mark.svg";
+function addMessage(msg){
+  const empty = $("messages").querySelector(".emptyState");
+  if (empty) empty.remove();
+  const el = document.createElement("div");
+  el.className = "msg";
+  el.id = "msg-" + msg.id;
+  el.innerHTML = messageHTML(msg);
+  $("messages").appendChild(el);
+  scrollEnd();
 }
-
-async function openChannel(channelId) {
-  activeChannel = activeSpace?.channels?.find(c => Number(c.id) === Number(channelId)) || spaces.flatMap(s => s.channels || []).find(c => Number(c.id) === Number(channelId));
-  if (!activeChannel) return;
-  if (!activeSpace) activeSpace = spaces.find(s => (s.channels || []).some(c => Number(c.id) === Number(channelId))) || null;
-  activeChat = null;
-  activeScope = { type: "channel", id: activeChannel.id };
-  $("sidebar").classList.remove("open");
-  setRoomHeader(`# ${activeChannel.name}`, `${activeSpace?.name || "Server"} channel`, "/logo-mark.svg");
-  renderSpaceSidebar();
-  updateViewMode();
-  await loadMessages("channel", activeChannel.id);
-  renderMembers();
+function updateMessage(msg){ const el=$("msg-"+msg.id); if (el) el.innerHTML = messageHTML(msg); }
+function messageHTML(msg){
+  const isMine = msg.sender_id === me.id;
+  const controls = isMine ? `<button onclick="startEdit(${msg.id})">edit</button><button onclick="deleteMsg(${msg.id})">delete</button>` : "";
+  const reactions = (msg.reactions || []).map(r => `<button onclick="react(${msg.id}, '${esc(r.emoji)}')">${esc(r.emoji)} ${r.count}</button>`).join("");
+  return `<img src="${esc(msg.avatar)}"><div class="msgContent"><div class="msgHead"><b>${esc(msg.display_name)}</b><small>${new Date(msg.created_at).toLocaleString()}${msg.edited ? " · edited" : ""}</small></div><div class="message-body" data-body="${esc(msg.body)}">${esc(msg.body)}</div><div class="reacts">${reactions}</div></div><div class="msgActions"><button onclick="react(${msg.id}, '😭')">😭</button><button onclick="react(${msg.id}, '❤️')">❤️</button>${controls}</div>`;
 }
-
-async function openChat(chatId) {
-  activeSpace = null;
-  activeChannel = null;
-  activeChat = chats.find(c => Number(c.id) === Number(chatId));
-  if (!activeChat) return;
-  activeScope = { type: "chat", id: activeChat.id };
-  $("sidebar").classList.remove("open");
-  setRoomHeader(activeChat.title, activeChat.members.map(m => m.display_name).join(", "), activeChat.avatar || "/user-default.svg");
-  renderSpaceSidebar();
-  updateViewMode();
-  await loadMessages("chat", activeChat.id);
-  refreshChats();
-  renderMembers();
+function scrollEnd(){ const box=$("messages"); box.scrollTop=box.scrollHeight; }
+function react(id, emoji){ socket.emit("message:react", { id, emoji }); }
+function startEdit(id){
+  const el = $("msg-" + id);
+  if (!el) return;
+  const body = el.querySelector(".message-body");
+  const old = body.dataset.body || body.textContent;
+  body.innerHTML = `<div class="editBox"><input id="edit-${id}" value="${esc(old)}"><button onclick="saveEdit(${id})">Save</button><button onclick="cancelEdit(${id}, '${encodeURIComponent(old)}')">Cancel</button></div>`;
+  const input = $("edit-" + id);
+  input.focus(); input.setSelectionRange(input.value.length, input.value.length);
+  input.onkeydown = e => { if (e.key === "Enter") saveEdit(id); if (e.key === "Escape") cancelEdit(id, encodeURIComponent(old)); };
 }
+function saveEdit(id){ const input=$("edit-"+id); if (!input) return; const body=input.value.trim(); if (body) socket.emit("message:edit", { id, body }); }
+function cancelEdit(id, encoded){ const el=$("msg-"+id); if (!el) return; const body=decodeURIComponent(encoded); el.querySelector(".message-body").textContent = body; }
+function deleteMsg(id){ if (confirm("Delete this message?")) socket.emit("message:delete", { id }); }
+async function friendRespond(id, action){ await api("/api/friends/respond", { method:"POST", body:JSON.stringify({ requestId:id, action }) }); refreshFriends(); refreshChats(); }
+function renderGroupFriends(){ const box=$("groupFriends"); if (!box) return; box.innerHTML = friends.map(f => `<label><input type="checkbox" value="${f.id}"> ${esc(f.display_name)}</label>`).join(""); }
 
-async function loadMessages(scope, id, scroll = true) {
-  socket.emit("watch:scope", { scope, scopeId: id });
-  const data = await api(`/api/messages/${scope}/${id}`);
-  $("messages").innerHTML = data.messages.length ? data.messages.map(messageHTML).join("") : `<div class="empty-chat"><h3>No messages yet</h3><p>Say something to start the conversation.</p></div>`;
-  if (scroll) scrollMessages();
-  renderPinned();
+$("showLogin").onclick = () => { $("loginForm").classList.remove("hide"); $("regForm").classList.add("hide"); $("showLogin").classList.add("on"); $("showReg").classList.remove("on"); };
+$("showReg").onclick = () => { $("regForm").classList.remove("hide"); $("loginForm").classList.add("hide"); $("showReg").classList.add("on"); $("showLogin").classList.remove("on"); };
+$("loginForm").onsubmit = async e => { e.preventDefault(); try{ const data=await api("/api/login", { method:"POST", body:JSON.stringify({ username:$("loginUser").value, password:$("loginPass").value }) }); me=data.user; showApp(); }catch(err){ $("authErr").textContent=err.message; } };
+$("regForm").onsubmit = async e => { e.preventDefault(); try{ const data=await api("/api/register", { method:"POST", body:JSON.stringify({ username:$("regUser").value, displayName:$("regDisplay").value, password:$("regPass").value }) }); me=data.user; showApp(); }catch(err){ $("authErr").textContent=err.message; } };
+$("composer").onsubmit = e => { e.preventDefault(); if (!active) return toast("Open a chat first."); const body=$("msgInput").value.trim(); if (!body) return; socket.emit("message:send", { chatId:active.id, body }); $("msgInput").value=""; };
+$("addFriend").onclick = async () => { try{ await api("/api/friends/request", { method:"POST", body:JSON.stringify({ username:$("friendUser").value }) }); $("friendUser").value=""; toast("Friend request sent."); }catch(err){ toast(err.message); } };
+$("clearBtn").onclick = async () => { if (!active) return; if (confirm("Clear this chat?")) await api(`/api/chats/${active.id}/messages`, { method:"DELETE" }); };
+$("self").onclick = () => openModal("profile");
+$("settingsBtn").onclick = () => openModal("settings");
+$("newGroup").onclick = () => openModal("group");
+document.querySelectorAll(".x").forEach(btn => btn.onclick = () => btn.closest(".modal").classList.add("hide"));
+function openModal(id){ $(id).classList.remove("hide"); }
+$("logout").onclick = async () => { await api("/api/logout", { method:"POST" }); location.reload(); };
+$("saveProfile").onclick = async () => { try{ const data=await api("/api/me", { method:"PUT", body:JSON.stringify({ displayName:$("displayName").value, bio:$("bio").value }) }); me=data.user; renderMe(); toast("Profile saved."); }catch(err){ toast(err.message); } };
+$("avatarFile").onchange = async () => { const form=new FormData(); form.append("avatar", $("avatarFile").files[0]); const res=await fetch("/api/me/avatar", { method:"POST", credentials:"include", body:form }); const data=await res.json(); if (!res.ok) return toast(data.error || "Upload failed"); me=data.user; renderMe(); toast("Avatar updated."); };
+$("createGroup").onclick = async () => { const ids=Array.from(document.querySelectorAll("#groupFriends input:checked")).map(i=>Number(i.value)); await api("/api/chats/group", { method:"POST", body:JSON.stringify({ name:$("groupName").value, userIds:ids }) }); $("group").classList.add("hide"); refreshChats(); };
+$("mobileMenu").onclick = () => $("side").classList.toggle("open");
+$("mobileBack").onclick = () => $("side").classList.toggle("open");
+
+$("msgVol").value = settings.msg; $("callVol").value = settings.call;
+$("msgVol").oninput = e => { settings.msg=Number(e.target.value); saveSettings(); };
+$("callVol").oninput = e => { settings.call=Number(e.target.value); saveSettings(); $("remoteAudio").volume=settings.call/100; };
+async function loadDevices(){ try{ const temp=await navigator.mediaDevices.getUserMedia({ audio:true }); temp.getTracks().forEach(t=>t.stop()); const devices=await navigator.mediaDevices.enumerateDevices(); const mics=devices.filter(d=>d.kind==="audioinput"); const speakers=devices.filter(d=>d.kind==="audiooutput"); $("mic").innerHTML=`<option value="">Default</option>`+mics.map(d=>`<option value="${d.deviceId}">${esc(d.label||"Microphone")}</option>`).join(""); $("speaker").innerHTML=`<option value="">Default</option>`+speakers.map(d=>`<option value="${d.deviceId}">${esc(d.label||"Speaker")}</option>`).join(""); $("mic").value=settings.mic||""; $("speaker").value=settings.speaker||""; }catch{} }
+$("refreshDevices").onclick = loadDevices; $("mic").onchange=e=>{ settings.mic=e.target.value; saveSettings(); }; $("speaker").onchange=e=>{ settings.speaker=e.target.value; saveSettings(); };
+
+async function iceConfig(){ const data=await api("/api/ice"); return { iceServers:data.iceServers, iceCandidatePoolSize:10 }; }
+async function getMicStream(){
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error("Your browser is blocking microphone access. Use HTTPS and allow the mic.");
+  return navigator.mediaDevices.getUserMedia({ audio:{ deviceId:settings.mic ? { exact:settings.mic } : undefined, echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video:false });
 }
-
-function appendMessage(msg) {
-  $("messages").insertAdjacentHTML("beforeend", messageHTML(msg));
-  scrollMessages();
-  renderPinned();
-}
-
-function messageHTML(msg) {
-  const mine = Number(msg.sender_id) === Number(me.id);
-  const isDeleted = !!msg.deleted;
-  const bodyText = esc(msg.body || "").replace(/\n/g, "<br>");
-  const time = new Date(msg.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  const edited = msg.edited ? '<span class="msg-edited">edited</span>' : '';
-  const reactions = (msg.reactions || []).map(r => `<button class="reaction-chip" type="button" onclick="reactMessage(${msg.id}, '${r.emoji}')">${r.emoji} <span>${r.count}</span></button>`).join("");
-  const controls = `
-    <button type="button" onclick="replyTo(${msg.id}, '${esc(msg.display_name).replace(/'/g, "\'")}')">Reply</button>
-    <button type="button" onclick="pinMessage(${msg.id})">${msg.pinned ? 'Unpin' : 'Pin'}</button>
-    <button type="button" onclick="reactMessage(${msg.id}, '❤️')">❤️</button>
-    <button type="button" onclick="reactMessage(${msg.id}, '😭')">😭</button>
-    <button type="button" onclick="reactMessage(${msg.id}, '🔥')">🔥</button>
-    ${mine ? `<button type="button" onclick="editMessage(${msg.id})">Edit</button><button type="button" onclick="deleteMessage(${msg.id})">Delete</button>` : ''}
-  `;
-
-  const replyBlock = msg.reply_preview ? `
-    <div class="reply-inline">
-      <span>↪</span>
-      <b>${esc(msg.reply_preview.display_name)}</b>
-      <small>${esc(msg.reply_preview.body || '').slice(0, 120)}</small>
-    </div>
-  ` : '';
-
-  const systemLike = /^you missed a call/i.test(String(msg.body || '')) || /^call /i.test(String(msg.body || ''));
-  if (systemLike) {
-    return `
-      <div class="msg system" id="msg-${msg.id}">
-        <div class="system-line">
-          <span class="system-icon">📞</span>
-          <span class="system-copy">${bodyText}</span>
-          <small>${time}</small>
-        </div>
-      </div>
-    `;
-  }
-
-  return `
-    <article class="msg ${mine ? 'mine' : ''} ${isDeleted ? 'deleted' : ''}" id="msg-${msg.id}">
-      <img class="avatar" src="${msg.avatar || '/user-default.svg'}" alt="">
-      <div class="msg-main">
-        <div class="msg-head">
-          <b class="msg-name">${esc(msg.display_name)}</b>
-          <small class="msg-time">${time}</small>
-          ${msg.pinned ? '<span class="msg-badge">Pinned</span>' : ''}
-          ${edited}
-        </div>
-        ${replyBlock}
-        <div class="msg-body">${bodyText}</div>
-        <div class="msg-reactions">${reactions}</div>
-      </div>
-      <div class="message-actions">${controls}</div>
-    </article>
-  `;
-}
-
-function scrollMessages() {
-  const box = $("messages");
-  box.scrollTop = box.scrollHeight;
-}
-
-function renderPinned() {
-  const cards = [...$("messages").querySelectorAll(".msg .msg-badge")].map(badge => {
-    const root = badge.closest('.msg');
-    const name = root?.querySelector('.msg-name')?.textContent || "";
-    const body = root?.querySelector('.msg-body')?.textContent || "";
-    return `<div class="pin-card"><div class="row-meta"><b>${esc(name)}</b><small>${esc((body || '').slice(0, 120))}</small></div></div>`;
-  });
-  $("pinnedList").innerHTML = cards.join("") || `<p class="muted tiny">No pinned messages yet.</p>`;
-}
-
-function renderMembers() {
-  let members = [];
-  if (activeChat) members = activeChat.members || [];
-  else if (activeScope?.type === "channel") {
-    members = friends;
-    const owner = me;
-    const seen = new Set();
-    members = [owner, ...members].filter(m => m && !seen.has(m.id) && seen.add(m.id));
-  }
-  $("memberList").innerHTML = members.map(member => `
-    <div class="member-chip">
-      <img src="${member.avatar}" alt="">
-      <div class="row-meta"><b>${esc(member.display_name)}</b><small>@${esc(member.username)}</small></div>
-      <span class="status-dot" style="background:${statusColor(member.status)}"></span>
-    </div>
-  `).join("") || `<p class="muted tiny">No members to show.</p>`;
-}
-
-function statusColor(status) {
-  return status === "dnd" ? "#ff5a79" : status === "idle" ? "#f5c15d" : status === "offline" ? "#68718c" : "#3ed49a";
-}
-
-function replyTo(id, name) {
-  replyTarget = id;
-  $("replyBanner").classList.remove("hidden");
-  $("replyBanner").innerHTML = `Replying to <b>${esc(name)}</b> <button type="button" onclick="clearReply()">cancel</button>`;
-}
-function clearReply() {
-  replyTarget = null;
-  $("replyBanner").classList.add("hidden");
-  $("replyBanner").innerHTML = "";
-}
-
-function reactMessage(id, emoji) { socket.emit("message:react", { id, emoji }); }
-function pinMessage(id) { socket.emit("message:pin", { id }); }
-
-function editMessage(id) {
-  const text = $(`msg-${id}`)?.querySelector(".msg-body")?.textContent || "";
-  const body = prompt("Edit message", text);
-  if (body) socket.emit("message:edit", { id, body });
-}
-function deleteMessage(id) {
-  if (confirm("Delete this message?")) socket.emit("message:delete", { id });
-}
-
-async function respondFriend(id, action) {
-  await api("/api/friends/respond", { method: "POST", body: JSON.stringify({ requestId: id, action }) });
-  refreshFriends(); refreshChats();
-}
-
-function renderGroupFriends() {
-  $("groupFriends").innerHTML = friends.map(f => `<label><input type="checkbox" value="${f.id}"> ${esc(f.display_name)}</label>`).join("");
-}
-
-$("showLogin").onclick = () => {
-  $("loginForm").classList.remove("hidden");
-  $("registerForm").classList.add("hidden");
-  $("showLogin").classList.add("active");
-  $("showRegister").classList.remove("active");
-};
-$("showRegister").onclick = () => {
-  $("registerForm").classList.remove("hidden");
-  $("loginForm").classList.add("hidden");
-  $("showRegister").classList.add("active");
-  $("showLogin").classList.remove("active");
-};
-
-$("loginForm").onsubmit = async e => {
-  e.preventDefault();
-  try {
-    const data = await api("/api/login", { method: "POST", body: JSON.stringify({ username: $("loginUsername").value, password: $("loginPassword").value }) });
-    me = data.user;
-    showApp();
-  } catch (err) { $("authError").textContent = err.message; }
-};
-$("registerForm").onsubmit = async e => {
-  e.preventDefault();
-  try {
-    const data = await api("/api/register", { method: "POST", body: JSON.stringify({ username: $("registerUsername").value, displayName: $("registerDisplay").value, password: $("registerPassword").value }) });
-    me = data.user;
-    showApp();
-  } catch (err) { $("authError").textContent = err.message; }
-};
-
-$("selfCard").onclick = () => openModal("profileModal");
-$("openSettings").onclick = () => openModal("settingsModal");
-$("createSpaceBtn").onclick = () => openModal("spaceModal");
-$("newChannelBtn").onclick = () => openModal("channelModal");
-$("newGroupBtn").onclick = () => openModal("groupModal");
-document.querySelectorAll(".closeModal").forEach(btn => btn.onclick = () => btn.closest(".modal").classList.add("hidden"));
-function openModal(id) { $(id).classList.remove("hidden"); }
-
-$("logoutBtn").onclick = async () => { await api("/api/logout", { method: "POST" }); location.reload(); };
-
-$("saveProfileBtn").onclick = async () => {
-  try {
-    const data = await api("/api/me", {
-      method: "PUT",
-      body: JSON.stringify({
-        displayName: $("profileDisplay").value,
-        tagline: $("profileTagline").value,
-        bio: $("profileBio").value,
-        status: $("profileStatus").value
-      })
-    });
-    me = data.user;
-    renderSelf();
-    socket.emit("presence:set", { status: me.status });
-    toast("Profile saved.");
-  } catch (err) { toast(err.message); }
-};
-
-$("avatarFile").onchange = async () => {
-  const file = $("avatarFile").files[0];
-  if (!file) return;
-  const fd = new FormData();
-  fd.append("avatar", file);
-  const res = await fetch("/api/me/avatar", { method: "POST", credentials: "include", body: fd });
-  const data = await res.json();
-  if (!res.ok) return toast(data.error || "Upload failed.");
-  me = data.user;
-  renderSelf();
-};
-
-$("saveSpaceBtn").onclick = async () => {
-  await api("/api/spaces", { method: "POST", body: JSON.stringify({ name: $("spaceName").value, theme: $("spaceTheme").value }) });
-  $("spaceModal").classList.add("hidden");
-  refreshSpaces();
-};
-
-$("saveChannelBtn").onclick = async () => {
-  if (!activeSpace) return toast("Select a space first.");
-  await api(`/api/spaces/${activeSpace.id}/channels`, { method: "POST", body: JSON.stringify({ name: $("channelName").value }) });
-  $("channelModal").classList.add("hidden");
-  refreshSpaces();
-};
-
-$("createGroupBtn").onclick = async () => {
-  const ids = [...document.querySelectorAll("#groupFriends input:checked")].map(input => Number(input.value));
-  await api("/api/chats/group", { method: "POST", body: JSON.stringify({ name: $("groupName").value, userIds: ids }) });
-  $("groupModal").classList.add("hidden");
-  refreshChats();
-};
-
-$("addFriendBtn").onclick = async () => {
-  try {
-    await api("/api/friends/request", { method: "POST", body: JSON.stringify({ username: $("friendUsername").value }) });
-    $("friendUsername").value = "";
-    toast("Friend request sent.");
-  } catch (err) { toast(err.message); }
-};
-
-$("composer").onsubmit = e => {
-  e.preventDefault();
-  if (!activeScope) return toast("Open a room first.");
-  const body = $("messageInput").value.trim();
-  if (!body) return;
-  socket.emit("message:send", { scope: activeScope.type, scopeId: activeScope.id, body, replyTo: replyTarget });
-  $("messageInput").value = "";
-  clearReply();
-  socket.emit("typing:stop", { scope: activeScope.type, scopeId: activeScope.id });
-};
-
-$("messageInput").addEventListener("input", () => {
-  if (!activeScope) return;
-  socket.emit("typing:start", { scope: activeScope.type, scopeId: activeScope.id });
-  clearTimeout(typingTimer);
-  typingTimer = setTimeout(() => socket.emit("typing:stop", { scope: activeScope.type, scopeId: activeScope.id }), 1000);
-});
-
-$("clearRoomBtn").onclick = async () => {
-  if (!activeScope) return;
-  if (activeScope.type !== "chat") return toast("Clear is enabled for DMs/groups only in this build.");
-  if (confirm("Clear this room?")) await api(`/api/messages/chat/${activeScope.id}`, { method: "DELETE" });
-};
-
-$("searchInput").addEventListener("keydown", async e => {
-  if (e.key !== "Enter") return;
-  e.preventDefault();
-  const q = $("searchInput").value.trim();
-  if (!q) return;
-  const data = await api(`/api/search?q=${encodeURIComponent(q)}`);
-  $("searchResults").innerHTML = data.results.map(msg => `
-    <div class="pin-card">
-      <div class="row-meta">
-        <b>${esc(msg.display_name)}</b>
-        <small>${esc(msg.body)}</small>
-      </div>
-    </div>
-  `).join("") || `<p class="muted tiny">No results found.</p>`;
-  openModal("searchModal");
-});
-
-$("mobileSidebarBtn").onclick = () => $("sidebar").classList.toggle("open");
-$("mobileBack").onclick = () => $("sidebar").classList.toggle("open");
-
-$("messageVolume").value = settings.messageVolume;
-$("callVolume").value = settings.callVolume;
-$("messageVolume").oninput = e => { settings.messageVolume = Number(e.target.value); saveSettings(); };
-$("callVolume").oninput = e => { settings.callVolume = Number(e.target.value); saveSettings(); $("remoteAudio").volume = settings.callVolume / 100; };
-
-async function loadDevices() {
-  try {
-    const temp = await navigator.mediaDevices.getUserMedia({ audio: true });
-    temp.getTracks().forEach(track => track.stop());
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const mics = devices.filter(d => d.kind === "audioinput");
-    const speakers = devices.filter(d => d.kind === "audiooutput");
-    $("micSelect").innerHTML = `<option value="">Default</option>` + mics.map(d => `<option value="${d.deviceId}">${esc(d.label || "Microphone")}</option>`).join("");
-    $("speakerSelect").innerHTML = `<option value="">Default</option>` + speakers.map(d => `<option value="${d.deviceId}">${esc(d.label || "Speaker")}</option>`).join("");
-    $("micSelect").value = settings.micId || "";
-    $("speakerSelect").value = settings.speakerId || "";
-  } catch {}
-}
-$("refreshDevicesBtn").onclick = loadDevices;
-$("micSelect").onchange = e => { settings.micId = e.target.value; saveSettings(); };
-$("speakerSelect").onchange = e => { settings.speakerId = e.target.value; saveSettings(); };
-
-async function iceConfig() {
-  const data = await api("/api/ice");
-  const fallback = [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    { urls: "stun:stun2.l.google.com:19302" },
-    { urls: "stun:global.stun.twilio.com:3478" }
-  ];
-  return { iceServers: [...(data.iceServers || []), ...fallback], iceCandidatePoolSize: 10 };
-}
-
-async function getUserMediaStream() {
-  return navigator.mediaDevices.getUserMedia({
-    audio: { deviceId: settings.micId ? { exact: settings.micId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    video: false
-  });
-}
-
-async function createPeer(targetId) {
+async function createPeer(peerId){
   const pc = new RTCPeerConnection(await iceConfig());
-  activeCall.pc = pc;
-
-  pc.onicecandidate = e => {
-    if (e.candidate) socket.emit("call:ice", { scope: activeCall.scope, scopeId: activeCall.scopeId, targetId, candidate: e.candidate });
-  };
-
+  call.pc = pc;
+  pc.onicecandidate = e => { if (e.candidate && call.chatId && peerId) socket.emit("call:ice", { chatId:call.chatId, targetId:peerId, candidate:e.candidate }); };
   pc.ontrack = e => {
-    const stream = e.streams[0];
-    if (e.track.kind === "audio") {
-      $("remoteAudio").srcObject = stream;
-      $("remoteAudio").volume = settings.callVolume / 100;
-      if ($("remoteAudio").setSinkId && settings.speakerId) $("remoteAudio").setSinkId(settings.speakerId).catch(() => {});
-      $("remoteAudio").play().catch(() => {});
-    }
-    if (e.track.kind === "video" || stream.getVideoTracks().length) {
-      $("remoteVideo").srcObject = stream;
-      $("remoteVideo").play().catch(() => {});
-    }
-    $("callStatus").textContent = stream.getVideoTracks().length ? "voice + screen connected" : "voice connected";
+    const audio = $("remoteAudio");
+    audio.srcObject = e.streams[0];
+    audio.volume = settings.call / 100;
+    if (audio.setSinkId && settings.speaker) audio.setSinkId(settings.speaker).catch(()=>{});
+    audio.play().catch(() => toast("Click anywhere once if you cannot hear the call."));
+    updateCallDock("connected");
   };
-
   pc.onconnectionstatechange = () => {
-    if (!activeCall.pc) return;
-    if (pc.connectionState === "connected") {
-      activeCall.connected = true;
-      $("callStatus").textContent = "connected";
-    }
-    if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
-      $("callStatus").textContent = pc.connectionState;
-      if (pc.connectionState === "failed") toast("Call connection failed. Add TURN_URL, TURN_USERNAME, and TURN_PASSWORD on Render if calls fail outside your Wi-Fi.");
-    }
+    if (["connected","connecting","disconnected","failed"].includes(pc.connectionState)) updateCallDock(pc.connectionState);
+    if (pc.connectionState === "failed") toast("Call connection failed. Add TURN settings on Render if this happens between different networks.");
   };
-
   return pc;
 }
-
-async function attachLocalMedia() {
-  if (activeCall.localStream) return activeCall.localStream;
-  activeCall.localStream = await getUserMediaStream();
-  activeCall.localStream.getTracks().forEach(track => activeCall.pc.addTrack(track, activeCall.localStream));
-  return activeCall.localStream;
+async function ensureLocalAudio(){
+  if (call.local) return call.local;
+  call.local = await getMicStream();
+  call.local.getTracks().forEach(track => call.pc.addTrack(track, call.local));
+  return call.local;
 }
-
-async function sendOffer(targetId) {
-  if (!activeCall.pc) return;
-  const offer = await activeCall.pc.createOffer();
-  await activeCall.pc.setLocalDescription(offer);
-  socket.emit("call:offer", { scope: activeCall.scope, scopeId: activeCall.scopeId, targetId, offer });
-}
-
-function showCall(title, status) {
-  $("callModal").classList.remove("hidden");
+function showCallDock(title, status, mode="calling"){
+  $("callDock").classList.remove("hide");
   $("callTitle").textContent = title;
-  $("callStatus").textContent = status;
-  $("incomingControls").classList.add("hidden");
+  updateCallDock(status);
+  $("incoming").classList.toggle("hide", mode !== "incoming");
+  $("inCallControls").classList.toggle("hide", mode === "incoming");
 }
-
-function getCallTarget() {
-  if (activeScope?.type === "chat" && activeChat?.members?.length) {
-    return activeChat.members.find(m => Number(m.id) !== Number(me.id)) || null;
-  }
-  return null;
+function updateCallDock(status){ call.state=status; $("callStatus").textContent=status; $("callBtn").textContent = call.chatId ? "☎ In Call" : "☎ Call"; }
+function stopTracks(stream){ if (stream) stream.getTracks().forEach(t=>t.stop()); }
+function resetCall(send=true){
+  if (send && call.peer && call.chatId) socket.emit("call:end", { chatId:call.chatId, targetId:call.peer });
+  try{ if (call.pc) call.pc.close(); }catch{}
+  stopTracks(call.local); stopTracks(call.screen);
+  call = freshCall();
+  $("callDock").classList.add("hide"); $("incoming").classList.add("hide"); $("inCallControls").classList.add("hide"); $("mute").textContent="Mute"; $("shareScreen").textContent="Share screen"; updateCallDock("idle");
 }
+async function startOutgoingCall(){
+  if (!active) return toast("Open a DM first.");
+  if (active.type !== "dm") return toast("Calls are one-on-one for now.");
+  const other = active.members.find(m => m.id !== me.id);
+  if (!other) return toast("No user found to call.");
 
-function resetCall(send = true) {
-  if (send && activeCall.peerId) socket.emit("call:end", { scope: activeCall.scope, scopeId: activeCall.scopeId, targetId: activeCall.peerId });
-  try { activeCall.pc?.close(); } catch {}
-  activeCall.localStream?.getTracks()?.forEach(t => t.stop());
-  activeCall.screenStream?.getTracks()?.forEach(t => t.stop());
-  activeCall = { pc:null, localStream:null, screenStream:null, scope:null, scopeId:null, peerId:null, incoming:null, pendingIce:[], muted:false, wantsScreen:false, connected:false };
-  $("localVideo").srcObject = null;
-  $("remoteVideo").srcObject = null;
-  $("remoteAudio").srcObject = null;
-  $("callModal").classList.add("hidden");
-  $("incomingControls").classList.add("hidden");
-  $("toggleScreenBtn").textContent = "Share screen";
-  $("muteBtn").textContent = "Mute";
-}
-
-$("callBtn").onclick = () => startCall();
-if ($("screenShareBtn")) $("screenShareBtn").onclick = () => toast("Start a call first, then use Share screen inside the call.");
-
-async function startCall() {
-  if (!activeScope || activeScope.type !== "chat" || !activeChat || activeChat.type !== "dm") return toast("Calls are available in one-on-one DMs.");
-  const target = getCallTarget();
-  if (!target) return toast("No user found for this call.");
-  try {
-    resetCall(false);
-    activeCall.scope = activeScope.type;
-    activeCall.scopeId = activeScope.id;
-    activeCall.peerId = target.id;
-    showCall(`Calling ${target.display_name}`, "ringing...");
-    activeCall.pc = await createPeer(target.id);
-    await attachLocalMedia();
-    socket.emit("call:invite", { scope: activeScope.type, scopeId: activeScope.id, targetId: target.id, media: "audio" });
-  } catch (err) {
-    toast(err.message || "Could not start the call.");
-    resetCall(false);
-  }
-}
-
-$("acceptCallBtn").onclick = async () => {
-  const incoming = activeCall.incoming;
-  if (!incoming) return;
-  try {
-    activeCall.scope = incoming.scope;
-    activeCall.scopeId = incoming.scopeId;
-    activeCall.peerId = incoming.from.id;
-    activeCall.pc = await createPeer(incoming.from.id);
-    await attachLocalMedia();
-    socket.emit("call:accept", { scope: incoming.scope, scopeId: incoming.scopeId, targetId: incoming.from.id });
-    $("incomingControls").classList.add("hidden");
-    $("callStatus").textContent = "connecting";
-  } catch (err) {
-    toast(err.message || "Could not accept the call.");
-    resetCall(false);
-  }
-};
-
-$("declineCallBtn").onclick = () => {
-  if (activeCall.incoming) socket.emit("call:decline", { scope: activeCall.incoming.scope, scopeId: activeCall.incoming.scopeId, targetId: activeCall.incoming.from.id });
   resetCall(false);
-};
-$("endCallBtn").onclick = () => resetCall(true);
-$("muteBtn").onclick = () => {
-  activeCall.muted = !activeCall.muted;
-  activeCall.localStream?.getAudioTracks().forEach(track => track.enabled = !activeCall.muted);
-  $("muteBtn").textContent = activeCall.muted ? "Unmute" : "Mute";
-};
-$("toggleScreenBtn").onclick = async () => {
-  if (!activeCall.pc || !activeCall.peerId) return toast("Start a call first.");
-  try {
-    if (!activeCall.screenStream) await startScreenshare();
-    else await stopScreenshare();
-  } catch { toast("Screen share cancelled."); }
-};
-
-async function startScreenshare() {
-  activeCall.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-  const track = activeCall.screenStream.getVideoTracks()[0];
-  activeCall.pc.addTrack(track, activeCall.screenStream);
-  $("localVideo").srcObject = activeCall.screenStream;
-  $("localVideo").play().catch(() => {});
-  $("toggleScreenBtn").textContent = "Stop sharing";
-  track.onended = () => stopScreenshare();
-  await sendOffer(activeCall.peerId);
+  call.chatId = active.id;
+  call.peer = other.id;
+  call.peerUser = other;
+  showCallDock("Calling " + other.display_name, "ringing", "calling");
+  socket.emit("call:invite", { chatId: active.id, targetId: other.id });
 }
+async function acceptIncomingCall(){
+  const incoming = call.incoming;
+  if (!incoming) return;
 
-async function stopScreenshare() {
-  if (!activeCall.screenStream) return;
-  const tracks = activeCall.screenStream.getTracks();
-  for (const track of tracks) {
-    const sender = activeCall.pc?.getSenders().find(s => s.track === track);
-    if (sender) activeCall.pc.removeTrack(sender);
-    track.stop();
+  call.chatId = incoming.chatId;
+  call.peer = incoming.from.id;
+  call.peerUser = incoming.from;
+  showCallDock("Voice call with " + incoming.from.display_name, "connecting", "calling");
+  socket.emit("call:accept", { chatId: incoming.chatId, targetId: incoming.from.id });
+}
+async function handleAccepted(data){
+  try{
+    updateCallDock("connecting");
+    call.peer = data.from.id;
+    call.peerUser = data.from;
+    call.pc = await createPeer(data.from.id);
+    await ensureLocalAudio();
+    const offer = await call.pc.createOffer({ offerToReceiveAudio:true });
+    await call.pc.setLocalDescription(offer);
+    socket.emit("call:offer", { chatId: data.chatId, targetId: data.from.id, offer });
+  }catch(err){
+    toast(err.message || "Could not start the call.");
+    resetCall(true);
   }
-  activeCall.screenStream = null;
-  $("localVideo").srcObject = null;
-  $("toggleScreenBtn").textContent = "Share screen";
-  if (activeCall.peerId) await sendOffer(activeCall.peerId);
 }
-
-function wireCallSocket() {
+async function handleOffer(data){
+  try{
+    call.chatId = data.chatId;
+    call.peer = data.fromUserId;
+    call.peerUser = data.from;
+    showCallDock("Voice call with " + (data.from?.display_name || "friend"), "connecting", "calling");
+    call.pc = await createPeer(data.fromUserId);
+    await ensureLocalAudio();
+    await call.pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+    for (const c of call.pending) await call.pc.addIceCandidate(new RTCIceCandidate(c));
+    call.pending = [];
+    const answer = await call.pc.createAnswer();
+    await call.pc.setLocalDescription(answer);
+    socket.emit("call:answer", { chatId: data.chatId, targetId: data.fromUserId, answer });
+    updateCallDock("connecting");
+  }catch(err){
+    toast(err.message || "Could not answer the call.");
+    resetCall(true);
+  }
+}
+async function handleAnswer(data){
+  try{
+    if (!call.pc) return;
+    await call.pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+    for (const c of call.pending) await call.pc.addIceCandidate(new RTCIceCandidate(c));
+    call.pending = [];
+    updateCallDock("connecting");
+  }catch(err){
+    toast(err.message || "Could not connect the call.");
+  }
+}
+function wireCallSocket(){
   socket.on("call:incoming", data => {
-    resetCall(false);
-    activeCall.scope = data.scope;
-    activeCall.scopeId = data.scopeId;
-    activeCall.peerId = data.from.id;
-    activeCall.incoming = data;
-    showCall(`Incoming call from ${data.from.display_name}`, "incoming voice call");
-    $("incomingControls").classList.remove("hidden");
+    if (call.chatId) {
+      socket.emit("call:decline", { chatId:data.chatId, targetId:data.from.id });
+      return;
+    }
+    call.chatId = data.chatId;
+    call.peer = data.from.id;
+    call.peerUser = data.from;
+    call.incoming = data;
+    showCallDock("Incoming call from " + data.from.display_name, "incoming", "incoming");
   });
-
-  socket.on("call:accepted", async data => {
-    try {
-      activeCall.peerId = data.from.id;
-      activeCall.scope = data.scope;
-      activeCall.scopeId = data.scopeId;
-      $("callTitle").textContent = `Call with ${data.from.display_name}`;
-      $("callStatus").textContent = "connecting";
-      if (!activeCall.pc) {
-        activeCall.pc = await createPeer(data.from.id);
-        await attachLocalMedia();
-      }
-      await sendOffer(data.from.id);
-    } catch (err) { toast(err.message || "Call failed."); resetCall(true); }
-  });
-
-  socket.on("call:offer", async data => {
-    try {
-      activeCall.scope = data.scope;
-      activeCall.scopeId = data.scopeId;
-      activeCall.peerId = data.fromUserId;
-      if (!activeCall.pc) {
-        activeCall.pc = await createPeer(data.fromUserId);
-        await attachLocalMedia();
-      }
-      await activeCall.pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-      for (const c of activeCall.pendingIce) await activeCall.pc.addIceCandidate(new RTCIceCandidate(c));
-      activeCall.pendingIce = [];
-      const answer = await activeCall.pc.createAnswer();
-      await activeCall.pc.setLocalDescription(answer);
-      socket.emit("call:answer", { scope: data.scope, scopeId: data.scopeId, targetId: data.fromUserId, answer });
-      $("callStatus").textContent = "connecting";
-    } catch (err) { toast(err.message || "Could not connect call."); resetCall(true); }
-  });
-
-  socket.on("call:answer", async data => {
-    try {
-      if (!activeCall.pc) return;
-      await activeCall.pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-      for (const c of activeCall.pendingIce) await activeCall.pc.addIceCandidate(new RTCIceCandidate(c));
-      activeCall.pendingIce = [];
-    } catch (err) { toast(err.message || "Call answer failed."); }
-  });
-
+  socket.on("call:accepted", handleAccepted);
+  socket.on("call:offer", handleOffer);
+  socket.on("call:answer", handleAnswer);
   socket.on("call:ice", async data => {
-    try {
-      if (activeCall.pc && activeCall.pc.remoteDescription) await activeCall.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-      else activeCall.pendingIce.push(data.candidate);
-    } catch (err) { console.warn(err); }
+    try{
+      if (call.pc && call.pc.remoteDescription) await call.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+      else call.pending.push(data.candidate);
+    }catch(err){ console.warn(err); }
   });
-
   socket.on("call:declined", () => { toast("Call declined."); resetCall(false); });
   socket.on("call:end", () => { toast("Call ended."); resetCall(false); });
 }
-
-window.selectSpace = selectSpace;
-window.openChannel = openChannel;
-window.openChat = openChat;
-window.openDM = openDM;
-window.respondFriend = respondFriend;
-window.replyTo = replyTo;
-window.clearReply = clearReply;
-window.reactMessage = reactMessage;
-window.pinMessage = pinMessage;
-window.editMessage = editMessage;
-window.deleteMessage = deleteMessage;
+$("callBtn").onclick = startOutgoingCall;
+$("accept").onclick = acceptIncomingCall;
+$("decline").onclick = () => { if (call.incoming) socket.emit("call:decline", { chatId:call.incoming.chatId, targetId:call.incoming.from.id }); resetCall(false); };
+$("endCall").onclick = () => resetCall(true);
+$("mute").onclick = () => { call.muted=!call.muted; if (call.local) call.local.getAudioTracks().forEach(t => t.enabled=!call.muted); $("mute").textContent = call.muted ? "Unmute" : "Mute"; };
+$("shareScreen").onclick = startScreenShare;
+$("callDock").onclick = () => $("remoteAudio").play().catch(()=>{});
 
 boot();
-
-
-// Settings glass tabs
-document.querySelectorAll(".settings-tab").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".settings-tab").forEach(x => x.classList.remove("active"));
-    document.querySelectorAll(".settings-page").forEach(x => x.classList.remove("active"));
-    btn.classList.add("active");
-    document.querySelector(`.settings-page[data-page="${btn.dataset.tab}"]`)?.classList.add("active");
-  });
-});
-const settingsProfileBtn = document.getElementById("settingsOpenProfile");
-if (settingsProfileBtn) {
-  settingsProfileBtn.addEventListener("click", () => {
-    document.getElementById("settingsModal")?.classList.add("hidden");
-    document.getElementById("profileModal")?.classList.remove("hidden");
-  });
-}
-
-
-function showDMHome() {
-  activeSpace = null;
-  activeChannel = null;
-  activeChat = null;
-  activeScope = null;
-  replyTarget = null;
-  renderSpaceSidebar();
-  refreshSpaces();
-  refreshChats();
-  setRoomHeader("Your messages", "Pick a DM, group, or create a new conversation.", "/logo-mark.svg");
-  $("messages").innerHTML = `
-    <div class="empty-state">
-      <img src="/logo-mark.svg" alt="">
-      <h2>Your messages</h2>
-      <p>Add a friend, accept a request, or create a group chat. Servers stay hidden until you open one.</p>
-    </div>
-  `;
-  renderPinned();
-  renderMembers();
-  updateViewMode();
-}
-
-function updateViewMode() {
-  const isChat = !!(activeScope && activeScope.type === "chat");
-  const isChannel = !!(activeScope && activeScope.type === "channel");
-  const isServer = !!activeSpace;
-  $("chatActions")?.classList.toggle("hidden", !isChat);
-  $("composer")?.classList.toggle("hidden", !(isChat || isChannel));
-  $("newChannelBtn")?.classList.toggle("hidden", !isServer);
-  $("newGroupBtn")?.classList.remove("hidden");
-  $("serverChannelsSection")?.classList.toggle("hidden", !isServer);
-}
-
-const dmHomeBtn = document.getElementById("dmHomeBtn");
-if (dmHomeBtn) dmHomeBtn.addEventListener("click", showDMHome);
