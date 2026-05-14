@@ -341,6 +341,18 @@ app.post("/api/me/avatar", requireAuth, upload.single("avatar"), (req, res) => {
   res.json({ user: publicUser(me.id) });
 });
 
+app.post("/api/attachments", requireAuth, upload.single("file"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Choose a file to upload." });
+  res.json({
+    file: {
+      url: `/uploads/${req.file.filename}`,
+      name: cleanText(req.file.originalname || "attachment", 120),
+      type: req.file.mimetype || "application/octet-stream",
+      size: req.file.size || 0
+    }
+  });
+});
+
 // Friends
 app.get("/api/friends", requireAuth, (req, res) => {
   const uid = Number(req.session.userId);
@@ -508,10 +520,16 @@ io.on("connection", socket => {
     const scope = payload.scope;
     const scopeId = Number(payload.scopeId);
     const body = cleanText(payload.body, 2000);
-    if (!body) return;
+    const attachments = Array.isArray(payload.attachments) ? payload.attachments.slice(0, 10).map(file => ({
+      url: String(file.url || "").startsWith("/uploads/") ? String(file.url) : "",
+      name: cleanText(file.name || "attachment", 120),
+      type: cleanText(file.type || "application/octet-stream", 80),
+      size: Number(file.size || 0)
+    })).filter(file => file.url) : [];
+    if (!body && !attachments.length) return;
     if (scope === "chat" && !userCanAccessChat(uid, scopeId)) return;
     if (scope === "channel" && !userCanAccessChannel(uid, scopeId)) return;
-    const msg = { id: data.nextMessageId++, scope, scope_id: scopeId, sender_id: uid, body, edited: 0, deleted: 0, pinned: 0, reply_to: payload.replyTo ? Number(payload.replyTo) : null, created_at: new Date().toISOString() };
+    const msg = { id: data.nextMessageId++, scope, scope_id: scopeId, sender_id: uid, body, attachments, edited: 0, deleted: 0, pinned: 0, reply_to: payload.replyTo ? Number(payload.replyTo) : null, created_at: new Date().toISOString() };
     data.messages.push(msg);
     saveData();
     const decorated = decorateMessage(msg);
@@ -595,7 +613,7 @@ io.on("connection", socket => {
   ["invite","accept","decline","offer","answer","ice","end"].forEach(name => {
     socket.on(`call:${name}`, payload => {
       payload = payload || {};
-      if (name === "invite") {
+      if (name === "invite" || name === "end") {
         const chatId = Number(payload.chatId || payload.scopeId || 0);
         const targetId = Number(payload.targetId || 0);
         if (chatId && targetId && userCanAccessChat(uid, chatId) && userCanAccessChat(targetId, chatId)) {
@@ -605,11 +623,12 @@ io.on("connection", socket => {
             scope: "chat",
             scope_id: chatId,
             sender_id: uid,
-            body: `Call started by ${caller?.display_name || "someone"}.`,
+            body: name === "invite" ? `Call started by ${caller?.display_name || "someone"}.` : `Call ended.`,
             edited: 0,
             deleted: 0,
             pinned: 0,
             reply_to: null,
+            attachments: [],
             created_at: new Date().toISOString()
           };
           data.messages.push(msg);
