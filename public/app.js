@@ -294,6 +294,14 @@ function messageHTML(msg) {
   const mine = Number(msg.sender_id) === Number(me.id);
   const isDeleted = !!msg.deleted;
   const bodyText = esc(msg.body || "").replace(/\n/g, "<br>");
+  const attachments = Array.isArray(msg.attachments) ? msg.attachments : [];
+  const attachmentsHTML = attachments.length ? `<div class="msg-attachments">${attachments.map(file => {
+    const url = esc(file.url || "");
+    const name = esc(file.name || "attachment");
+    const mime = String(file.type || "");
+    if (mime.startsWith("image/")) return `<a class="image-attachment" href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${name}"></a>`;
+    return `<a class="file-attachment" href="${url}" target="_blank" rel="noopener"><img src="/icons/attach.svg" alt=""><span>${name}</span></a>`;
+  }).join("")}</div>` : "";
   const time = new Date(msg.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const edited = msg.edited ? '<span class="msg-edited">edited</span>' : '';
   const reactions = (msg.reactions || []).map(r => `<button class="reaction-chip" type="button" onclick="reactMessage(${msg.id}, '${r.emoji}')">${r.emoji} <span>${r.count}</span></button>`).join("");
@@ -314,12 +322,12 @@ function messageHTML(msg) {
     </div>
   ` : '';
 
-  const callSystemLike = /^you missed a call/i.test(String(msg.body || '')) || /^call /i.test(String(msg.body || ''));
+  const callSystemLike = /^you missed a call/i.test(String(msg.body || '')) || /^call /i.test(String(msg.body || '')) || /started a call|call ended|ended a call/i.test(String(msg.body || ''));
   if (callSystemLike) {
     return `
       <div class="msg system call-system" id="msg-${msg.id}">
         <div class="system-line">
-          <span class="system-icon" aria-hidden="true">☎</span>
+          <span class="system-icon" aria-hidden="true"><img src="/icons/phone.svg" alt=""></span>
           <span class="system-copy">${bodyText}</span>
           <small>${time}</small>
         </div>
@@ -339,6 +347,7 @@ function messageHTML(msg) {
         </div>
         ${replyBlock}
         <div class="msg-body">${bodyText}</div>
+        ${attachmentsHTML}
         <div class="msg-reactions">${reactions}</div>
       </div>
       <div class="message-actions">${controls}</div>
@@ -557,15 +566,42 @@ $("addFriendBtn").onclick = async () => {
   } catch (err) { toast(err.message); }
 };
 
-$("composer").onsubmit = e => {
+if ($("attachBtn")) $("attachBtn").onclick = () => $("fileInput")?.click();
+if ($("fileInput")) $("fileInput").addEventListener("change", () => {
+  const count = $("fileInput").files?.length || 0;
+  if (count) toast(`${count} file${count === 1 ? "" : "s"} ready to send.`);
+});
+
+async function uploadComposerFiles() {
+  const input = $("fileInput");
+  const files = [...(input?.files || [])];
+  if (!files.length) return [];
+  const uploaded = [];
+  for (const file of files) {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("/api/attachments", { method: "POST", body: form, credentials: "include" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Could not upload file.");
+    uploaded.push(data.file);
+  }
+  input.value = "";
+  return uploaded;
+}
+
+$("composer").onsubmit = async e => {
   e.preventDefault();
   if (!activeScope) return toast("Open a room first.");
   const body = $("messageInput").value.trim();
-  if (!body) return;
-  socket.emit("message:send", { scope: activeScope.type, scopeId: activeScope.id, body, replyTo: replyTarget });
-  $("messageInput").value = "";
-  clearReply();
-  socket.emit("typing:stop", { scope: activeScope.type, scopeId: activeScope.id });
+  const hasFiles = ($("fileInput")?.files?.length || 0) > 0;
+  if (!body && !hasFiles) return;
+  try {
+    const attachments = await uploadComposerFiles();
+    socket.emit("message:send", { scope: activeScope.type, scopeId: activeScope.id, body, attachments, replyTo: replyTarget });
+    $("messageInput").value = "";
+    clearReply();
+    socket.emit("typing:stop", { scope: activeScope.type, scopeId: activeScope.id });
+  } catch (err) { toast(err.message || "Could not send attachment."); }
 };
 
 $("messageInput").addEventListener("input", () => {
@@ -740,8 +776,11 @@ function resetCall(send = true) {
   $("remoteAudio").srcObject = null;
   $("callModal").classList.add("hidden");
   $("incomingControls").classList.add("hidden");
-  $("toggleScreenBtn").textContent = "Share screen";
-  $("muteBtn").textContent = "Mute";
+  const shareSpan = $("toggleScreenBtn")?.querySelector("span"); if (shareSpan) shareSpan.textContent = "Share screen";
+  const muteSpan = $("muteBtn")?.querySelector("span");
+  const muteImg = $("muteBtn")?.querySelector("img");
+  if (muteSpan) muteSpan.textContent = "Mute";
+  if (muteImg) muteImg.src = "/icons/mic.svg";
 }
 
 $("callBtn").onclick = () => startCall();
@@ -794,7 +833,10 @@ $("endCallBtn").onclick = () => resetCall(true);
 $("muteBtn").onclick = () => {
   activeCall.muted = !activeCall.muted;
   activeCall.localStream?.getAudioTracks().forEach(track => track.enabled = !activeCall.muted);
-  $("muteBtn").textContent = activeCall.muted ? "Unmute" : "Mute";
+  const muteSpan = $("muteBtn")?.querySelector("span");
+  const muteImg = $("muteBtn")?.querySelector("img");
+  if (muteSpan) muteSpan.textContent = activeCall.muted ? "Unmute" : "Mute";
+  if (muteImg) muteImg.src = activeCall.muted ? "/icons/mic-off.svg" : "/icons/mic.svg";
 };
 
 $("toggleScreenBtn").onclick = () => toast("Simple voice calling is enabled. Screen share is not included in this version.");
