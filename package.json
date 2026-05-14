@@ -1,7 +1,7 @@
 {
-  "name": "chorus-clean-ui-fix",
+  "name": "chorus-emo-minimal-ui",
   "version": "7.0.0",
-  "description": "Chorus - clean social chat app with spaces, channels, DMs, calling, and screen sharing",
+  "description": "Chorus - minimal black and white browser chat app with calls and screen sharing",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
