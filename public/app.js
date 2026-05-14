@@ -302,7 +302,7 @@ function messageHTML(msg) {
     <button type="button" onclick="reactMessage(${msg.id}, '❤️')">❤️</button>
     <button type="button" onclick="reactMessage(${msg.id}, '😭')">😭</button>
     <button type="button" onclick="reactMessage(${msg.id}, '🔥')">🔥</button>
-    ${mine ? `<button type="button" onclick="editMessage(${msg.id})">Edit</button><button type="button" onclick="deleteMessage(${msg.id})">Delete</button>` : ''}
+    ${mine ? `<button type="button" onclick="editMessage(${msg.id})">Edit</button><button type="button" onclick="deleteMessage(${msg.id}, this)">Delete</button>` : ''}
   `;
 
   const replyBlock = msg.reply_preview ? `
@@ -398,28 +398,55 @@ function pinMessage(id) { socket.emit("message:pin", { id }); }
 
 function editMessage(id) {
   const msgEl = $(`msg-${id}`);
-  const p = msgEl?.querySelector("p");
-  if (!p || msgEl.querySelector(".inline-editor")) return;
-  const oldText = p.textContent || "";
+  const bodyEl = msgEl?.querySelector(".msg-body");
+  if (!bodyEl || msgEl.classList.contains("deleted") || msgEl.querySelector(".inline-editor")) return;
+
+  const oldText = bodyEl.innerText || bodyEl.textContent || "";
   const editor = document.createElement("form");
   editor.className = "inline-editor";
-  editor.innerHTML = `<input value="${esc(oldText)}" maxlength="2000"><button type="submit">Save</button><button type="button">Cancel</button>`;
-  p.style.display = "none";
-  p.after(editor);
-  const input = editor.querySelector("input");
+
+  const input = document.createElement("textarea");
+  input.value = oldText;
+  input.maxLength = 2000;
+  input.rows = Math.min(6, Math.max(2, oldText.split("\n").length));
+
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "submit";
+  saveBtn.textContent = "Save";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.textContent = "Cancel";
+
+  editor.append(input, saveBtn, cancelBtn);
+  bodyEl.style.display = "none";
+  bodyEl.after(editor);
   input.focus();
   input.select();
+
   editor.onsubmit = e => {
     e.preventDefault();
     const body = input.value.trim();
-    if (body && body !== oldText) socket.emit("message:edit", { id, body });
+    if (body && body !== oldText.trim()) socket.emit("message:edit", { id, body });
     editor.remove();
-    p.style.display = "";
+    bodyEl.style.display = "";
   };
-  editor.querySelector("button[type=button]").onclick = () => { editor.remove(); p.style.display = ""; };
+  cancelBtn.onclick = () => { editor.remove(); bodyEl.style.display = ""; };
 }
-function deleteMessage(id) {
-  if (confirm("Delete this message?")) socket.emit("message:delete", { id });
+
+function deleteMessage(id, btn) {
+  if (btn && btn.dataset.confirm !== "yes") {
+    btn.dataset.confirm = "yes";
+    btn.textContent = "Confirm?";
+    setTimeout(() => {
+      if (btn.dataset.confirm === "yes") {
+        btn.dataset.confirm = "";
+        btn.textContent = "Delete";
+      }
+    }, 3000);
+    return;
+  }
+  socket.emit("message:delete", { id });
 }
 
 async function respondFriend(id, action) {
@@ -606,56 +633,65 @@ async function iceConfig() {
   return { iceServers: [...(data.iceServers || []), ...fallback], iceCandidatePoolSize: 10 };
 }
 
-async function getUserMediaStream() {
+async function ensureLocalAudio() {
+  if (activeCall.localStream && activeCall.localStream.active) return activeCall.localStream;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     throw new Error("Your browser does not support voice calls.");
   }
-  return navigator.mediaDevices.getUserMedia({
-    audio: { deviceId: settings.micId ? { exact: settings.micId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  activeCall.localStream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      deviceId: settings.micId ? { exact: settings.micId } : undefined,
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true
+    },
     video: false
   });
+  return activeCall.localStream;
 }
 
 async function createPeer(peerId) {
   const pc = new RTCPeerConnection(await iceConfig());
   activeCall.pc = pc;
 
+  const local = await ensureLocalAudio();
+  local.getTracks().forEach(track => pc.addTrack(track, local));
+
   pc.onicecandidate = event => {
-    if (event.candidate) {
+    if (event.candidate && activeCall.chatId && peerId) {
       socket.emit("call:ice", { chatId: activeCall.chatId, targetId: peerId, candidate: event.candidate });
     }
   };
 
   pc.ontrack = event => {
-    const stream = event.streams && event.streams[0];
+    const stream = event.streams?.[0];
     if (!stream) return;
     const audio = $("remoteAudio");
     audio.srcObject = stream;
     audio.volume = settings.callVolume / 100;
     if (audio.setSinkId && settings.speakerId) audio.setSinkId(settings.speakerId).catch(() => {});
-    audio.play().catch(() => toast("Tap the call window once to enable audio."));
+    audio.play().catch(() => toast("Click the call bar once to enable audio."));
+    activeCall.connected = true;
     $("callStatus").textContent = "connected";
   };
 
-  pc.onconnectionstatechange = () => {
-    const state = pc.connectionState;
-    if (state === "connected") {
+  const updateState = () => {
+    const state = pc.connectionState || pc.iceConnectionState;
+    if (!state) return;
+    if (state === "connected" || state === "completed") {
       activeCall.connected = true;
       $("callStatus").textContent = "connected";
     } else if (["failed", "disconnected", "closed"].includes(state)) {
       $("callStatus").textContent = state;
-      if (state === "failed") toast("Call failed to connect. Add TURN variables on Render if this happens on different networks.");
-    } else if (state) {
+      if (state === "failed") toast("Call failed to connect. On Render, add TURN_URL, TURN_USERNAME, and TURN_PASSWORD if users are on different networks.");
+    } else {
       $("callStatus").textContent = state;
     }
   };
+  pc.onconnectionstatechange = updateState;
+  pc.oniceconnectionstatechange = updateState;
 
   return pc;
-}
-
-async function addLocalAudio() {
-  activeCall.localStream = await getUserMediaStream();
-  activeCall.localStream.getTracks().forEach(track => activeCall.pc.addTrack(track, activeCall.localStream));
 }
 
 function showCall(title, status, incoming = false) {
@@ -690,24 +726,43 @@ function resetCall(send = true) {
 }
 
 $("callBtn").onclick = () => startCall();
-if ($("screenShareBtn")) $("screenShareBtn").onclick = () => toast("Start a voice call first. Screen share can be added later.");
+if ($("screenShareBtn")) {
+  $("screenShareBtn").classList.add("hidden");
+  $("screenShareBtn").onclick = () => toast("Screen share is inside the call controls.");
+}
 
-function startCall() {
+async function startCall() {
   if (!activeChat || activeChat.type !== "dm") return toast("Open a one-on-one DM to call.");
   const target = getCallTarget();
   if (!target) return toast("No user found for this call.");
-  activeCall.chatId = activeChat.id;
-  activeCall.peerId = target.id;
-  showCall(`Calling ${target.display_name}`, "ringing", false);
-  socket.emit("call:invite", { chatId: activeChat.id, targetId: target.id });
+  if (activeCall.pc || activeCall.incoming) return toast("You are already in a call.");
+  try {
+    activeCall.chatId = activeChat.id;
+    activeCall.peerId = target.id;
+    showCall(`Calling ${target.display_name}`, "getting microphone", false);
+    await ensureLocalAudio();
+    $("callStatus").textContent = "ringing";
+    socket.emit("call:invite", { chatId: activeChat.id, targetId: target.id });
+  } catch (err) {
+    toast(err.message || "Microphone permission was blocked.");
+    resetCall(false);
+  }
 }
 
-$("acceptCallBtn").onclick = () => {
+$("acceptCallBtn").onclick = async () => {
   const incoming = activeCall.incoming;
   if (!incoming) return;
-  socket.emit("call:accept", { chatId: incoming.chatId, targetId: incoming.from.id });
-  $("incomingControls").classList.add("hidden");
-  $("callStatus").textContent = "connecting";
+  try {
+    $("callStatus").textContent = "getting microphone";
+    await ensureLocalAudio();
+    socket.emit("call:accept", { chatId: incoming.chatId, targetId: incoming.from.id });
+    $("incomingControls").classList.add("hidden");
+    $("callStatus").textContent = "connecting";
+  } catch (err) {
+    toast(err.message || "Microphone permission was blocked.");
+    socket.emit("call:decline", { chatId: incoming.chatId, targetId: incoming.from.id });
+    resetCall(false);
+  }
 };
 
 $("declineCallBtn").onclick = () => {
@@ -723,11 +778,15 @@ $("muteBtn").onclick = () => {
   $("muteBtn").textContent = activeCall.muted ? "Unmute" : "Mute";
 };
 
-$("toggleScreenBtn").onclick = () => toast("Voice calling is enabled. Screen share is not part of this restored version yet.");
+$("toggleScreenBtn").onclick = () => toast("Simple voice calling is enabled. Screen share is not included in this version.");
 $("callModal").onclick = () => $("remoteAudio").play().catch(() => {});
 
 function wireCallSocket() {
   socket.on("call:incoming", data => {
+    if (activeCall.pc || activeCall.incoming) {
+      socket.emit("call:decline", { chatId: data.chatId, targetId: data.from.id });
+      return;
+    }
     activeCall.chatId = data.chatId;
     activeCall.peerId = data.from.id;
     activeCall.incoming = data;
@@ -740,11 +799,10 @@ function wireCallSocket() {
       activeCall.chatId = data.chatId;
       activeCall.peerId = data.from.id;
       activeCall.pc = await createPeer(data.from.id);
-      await addLocalAudio();
       const offer = await activeCall.pc.createOffer();
       await activeCall.pc.setLocalDescription(offer);
       socket.emit("call:offer", { chatId: data.chatId, targetId: data.from.id, offer });
-    } catch (err) { toast(err.message); resetCall(true); }
+    } catch (err) { toast(err.message || "Could not start call."); resetCall(true); }
   });
 
   socket.on("call:offer", async data => {
@@ -752,28 +810,27 @@ function wireCallSocket() {
       activeCall.chatId = data.chatId;
       activeCall.peerId = data.fromUserId;
       activeCall.pc = await createPeer(data.fromUserId);
-      await addLocalAudio();
       await activeCall.pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-      for (const c of activeCall.pendingIce) await activeCall.pc.addIceCandidate(new RTCIceCandidate(c));
-      activeCall.pendingIce = [];
+      for (const c of activeCall.pendingIce.splice(0)) await activeCall.pc.addIceCandidate(new RTCIceCandidate(c));
       const answer = await activeCall.pc.createAnswer();
       await activeCall.pc.setLocalDescription(answer);
       socket.emit("call:answer", { chatId: data.chatId, targetId: data.fromUserId, answer });
       $("callStatus").textContent = "connecting";
-    } catch (err) { toast(err.message); resetCall(true); }
+    } catch (err) { toast(err.message || "Could not answer call."); resetCall(true); }
   });
 
   socket.on("call:answer", async data => {
     try {
+      if (!activeCall.pc) return;
       await activeCall.pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-      for (const c of activeCall.pendingIce) await activeCall.pc.addIceCandidate(new RTCIceCandidate(c));
-      activeCall.pendingIce = [];
+      for (const c of activeCall.pendingIce.splice(0)) await activeCall.pc.addIceCandidate(new RTCIceCandidate(c));
       $("callStatus").textContent = "connecting";
-    } catch (err) { toast(err.message); }
+    } catch (err) { toast(err.message || "Could not connect call."); }
   });
 
   socket.on("call:ice", async data => {
     try {
+      if (!data.candidate) return;
       if (activeCall.pc && activeCall.pc.remoteDescription) await activeCall.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
       else activeCall.pendingIce.push(data.candidate);
     } catch (err) { console.warn(err); }
