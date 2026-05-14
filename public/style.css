@@ -1537,3 +1537,181 @@ body{background:#0a0b0f !important;color:var(--text) !important;}
 .friends-inner-tabs button.active img,.friends-inner-tabs button:hover img{
   filter:brightness(0) saturate(100%) invert(100%);
 }
+
+
+/* Discord-style in-chat call area: not a popup */
+.message-panel{
+  grid-template-rows:auto auto auto minmax(0,1fr) 72px !important;
+}
+.message-panel > .call-modal{
+  position:relative !important;
+  left:auto !important;
+  right:auto !important;
+  top:auto !important;
+  width:100% !important;
+  height:228px !important;
+  z-index:1 !important;
+  padding:0 !important;
+  display:block !important;
+  background:#050506 !important;
+  border:0 !important;
+  border-bottom:1px solid #15161a !important;
+  border-radius:0 !important;
+  box-shadow:none !important;
+  backdrop-filter:none !important;
+  pointer-events:auto !important;
+}
+.message-panel > .call-modal.hidden{display:none !important;}
+.message-panel > .call-modal .call-card{
+  width:100% !important;
+  height:100% !important;
+  display:grid !important;
+  grid-template-rows:1fr auto !important;
+  place-items:center !important;
+  gap:10px !important;
+  padding:24px 18px 14px !important;
+  background:transparent !important;
+  border:0 !important;
+  border-radius:0 !important;
+  box-shadow:none !important;
+}
+.message-panel > .call-modal .call-top{
+  position:absolute !important;
+  left:18px !important;
+  top:14px !important;
+  right:18px !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:space-between !important;
+  pointer-events:none !important;
+  background:transparent !important;
+  border:0 !important;
+  padding:0 !important;
+}
+.message-panel > .call-modal .call-top h2{
+  font-size:14px !important;
+  margin:0 !important;
+  color:#f5f5f6 !important;
+}
+.message-panel > .call-modal .call-top p{
+  font-size:12px !important;
+  margin:2px 0 0 !important;
+  color:#8b8e96 !important;
+}
+.message-panel > .call-modal .call-body{
+  display:grid !important;
+  place-items:center !important;
+  width:100% !important;
+}
+.message-panel > .call-modal .call-stage{
+  display:grid !important;
+  place-items:center !important;
+  min-height:100px !important;
+}
+.message-panel > .call-modal .call-avatar-pair{
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  gap:22px !important;
+}
+.message-panel > .call-modal .call-avatar-pair img{
+  width:78px !important;
+  height:78px !important;
+  border-radius:50% !important;
+  object-fit:cover !important;
+  border:1px solid rgba(255,255,255,.12) !important;
+  box-shadow:0 12px 38px rgba(0,0,0,.55) !important;
+  background:#121318 !important;
+}
+.message-panel > .call-modal.ringing .call-avatar-pair img{
+  animation:callRingPulse 1.15s ease-in-out infinite;
+}
+.message-panel > .call-modal.ringing .call-avatar-pair img:nth-child(2){animation-delay:.18s;}
+.message-panel > .call-modal.connected-call .call-avatar-pair img{animation:none;opacity:1;filter:none;}
+@keyframes callRingPulse{
+  0%,100%{transform:scale(1);box-shadow:0 12px 38px rgba(0,0,0,.55),0 0 0 0 rgba(255,255,255,.18);opacity:.72;}
+  50%{transform:scale(1.055);box-shadow:0 12px 38px rgba(0,0,0,.55),0 0 0 10px rgba(255,255,255,0);opacity:1;}
+}
+.message-panel > .call-modal .video-stack{display:none !important;}
+.message-panel > .call-modal .call-controls{
+  display:flex !important;
+  justify-content:center !important;
+  align-items:center !important;
+  gap:10px !important;
+  margin:0 !important;
+}
+.message-panel > .call-modal .call-controls button,
+.message-panel > .call-modal .incoming button{
+  min-width:54px !important;
+  height:42px !important;
+  padding:0 14px !important;
+  border-radius:12px !important;
+  background:#17181d !important;
+  color:#f5f5f5 !important;
+  border:1px solid #262832 !important;
+  box-shadow:none !important;
+}
+.message-panel > .call-modal .incoming{
+  position:absolute !important;
+  bottom:14px !important;
+  left:50% !important;
+  transform:translateX(-50%) !important;
+  display:flex !important;
+  gap:10px !important;
+}
+.message-panel > .call-modal .incoming.hidden{display:none !important;}
+.message-panel > .call-modal .incoming .primary-btn{background:#f2f2f2 !important;color:#050505 !important;}
+.message-panel > .call-modal .incoming .danger{background:#e23c4f !important;color:#fff !important;}
+.message-panel > .call-modal .call-controls #toggleScreenBtn{display:none !important;}
+.message-panel > .call-modal .call-top #endCallBtn{
+  display:grid !important;
+  position:absolute !important;
+  top:151px !important;
+  right:calc(50% - 176px) !important;
+  width:58px !important;
+  height:42px !important;
+  padding:0 !important;
+  place-items:center !important;
+  border-radius:12px !important;
+  background:#e23c4f !important;
+  border:1px solid #e23c4f !important;
+  color:#fff !important;
+  font-size:0 !important;
+  pointer-events:auto !important;
+  box-shadow:none !important;
+}
+.message-panel > .call-modal .call-top #endCallBtn::before{
+  content:"☎";
+  font-size:18px;
+  transform:rotate(135deg);
+  display:block;
+}
+.message-panel > .call-modal .call-top #endCallBtn:hover{background:#f04b5d !important;transform:none !important;}
+.msg.system.call-system{
+  margin:10px 0 12px !important;
+  padding-left:18px !important;
+}
+.msg.system.call-system .system-line{
+  display:flex !important;
+  align-items:center !important;
+  gap:12px !important;
+  color:#a3a6ad !important;
+  font-size:15px !important;
+}
+.msg.system.call-system .system-icon{
+  width:22px !important;
+  height:22px !important;
+  display:grid !important;
+  place-items:center !important;
+  color:#39d77b !important;
+  font-size:20px !important;
+  line-height:1 !important;
+}
+.msg.system.call-system .system-copy b,
+.msg.system.call-system .system-copy strong{color:#f5f5f6 !important;}
+.msg.system.call-system .system-copy{color:#a3a6ad !important;}
+.msg.system.call-system small{font-size:12px !important;color:#737781 !important;}
+@media (max-width:900px){
+  .message-panel > .call-modal{height:212px !important;}
+  .message-panel > .call-modal .call-top #endCallBtn{right:calc(50% - 158px) !important;}
+}
