@@ -128,7 +128,7 @@ function userCanAccessChannel(userId, channelId) {
 
 function userCanAccessChat(userId, chatId) {
   const chat = chatById(chatId);
-  return !!chat && (chat.members || []).includes(Number(userId));
+  return !!chat && (chat.members || []).some(id => Number(id) === Number(userId));
 }
 
 function areFriends(a, b) {
@@ -540,6 +540,11 @@ io.on("connection", socket => {
     saveData();
     const decorated = decorateMessage(msg);
     io.to(`${msg.scope}:${msg.scope_id}`).emit("message:update", decorated);
+    if (msg.scope === "chat") notifyChat(msg.scope_id, "message:update", decorated);
+    else {
+      const channel = channelById(msg.scope_id);
+      if (channel) notifySpace(channel.space_id, "message:update", decorated);
+    }
   });
 
   socket.on("message:pin", payload => {
