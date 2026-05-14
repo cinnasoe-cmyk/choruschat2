@@ -101,6 +101,8 @@ function connectSocket() {
   socket.on("presence:update", ({ userId, status }) => {
     if (Number(userId) === Number(me.id)) { me.status = status; renderSelf(); }
     refreshFriends();
+    refreshChats();
+    refreshSpaces();
     if (activeScope) renderMembers();
   });
 
@@ -164,15 +166,23 @@ function renderSpaceSidebar() {
   if (activeSpace) {
     $("activeSpaceName").textContent = activeSpace.name;
     if (section) section.classList.remove("hidden");
+    const isOwner = Number(activeSpace.owner_id) === Number(me?.id);
     $("channelList").innerHTML = (activeSpace.channels || []).length ? activeSpace.channels.map(ch => `
-      <button class="row-btn ${activeChannel && Number(activeChannel.id) === Number(ch.id) ? 'active' : ''}" type="button" onclick="openChannel(${ch.id})">
-        <div class="row-meta"><b># ${esc(ch.name)}</b><small>${esc(activeSpace.name)} channel</small></div>
-      </button>
+      <div class="channel-row-wrap ${activeChannel && Number(activeChannel.id) === Number(ch.id) ? 'active' : ''}">
+        <button class="row-btn channel-row ${activeChannel && Number(activeChannel.id) === Number(ch.id) ? 'active' : ''}" type="button" onclick="openChannel(${ch.id})">
+          <div class="row-meta"><b># ${esc(ch.name)}</b><small>${esc(activeSpace.name)} channel</small></div>
+        </button>
+        ${isOwner ? `<button class="mini-icon-btn danger-mini" type="button" title="Delete channel" onclick="deleteChannel(${ch.id}, event)"><img src="/icons/trash.svg" alt=""></button>` : ``}
+      </div>
     `).join("") : `<div class="soft-empty">No channels yet. Tap + to create one.</div>`;
+    $("serverToolsSection")?.classList.remove("hidden");
+    $("deleteServerBtn")?.classList.toggle("hidden", !isOwner);
+    $("deleteChannelBtn")?.classList.toggle("hidden", !isOwner);
   } else {
     $("activeSpaceName").textContent = "messages";
     if (section) section.classList.add("hidden");
     $("channelList").innerHTML = "";
+    $("serverToolsSection")?.classList.add("hidden");
   }
   updateViewMode();
 }
@@ -180,12 +190,15 @@ function renderSpaceSidebar() {
 async function refreshChats() {
   const data = await api("/api/chats");
   chats = data.chats;
-  $("chatList").innerHTML = chats.map(chat => `
+  $("chatList").innerHTML = chats.map(chat => {
+    const other = chat.type === "dm" ? (chat.members || []).find(m => Number(m.id) !== Number(me.id)) : null;
+    const status = other?.status || "online";
+    return `
     <button class="row-btn ${activeChat && Number(activeChat.id) === Number(chat.id) ? 'active' : ''}" type="button" onclick="openChat(${chat.id})">
-      <img src="${chat.avatar}" alt="">
-      <div class="row-meta"><b>${esc(chat.title)}</b><small>${esc(chat.last ? chat.last.body : 'No messages yet')}</small></div>
-    </button>
-  `).join("");
+      <span class="avatar-status-wrap"><img src="${chat.avatar}" alt=""><i class="presence-dot ${esc(status)}"></i></span>
+      <div class="row-meta"><b>${esc(chat.title)}</b><small>${esc(chat.last ? chat.last.body : (other ? statusLabel(status) : 'No messages yet'))}</small></div>
+    </button>`;
+  }).join("");
 }
 
 async function refreshFriends() {
@@ -193,16 +206,16 @@ async function refreshFriends() {
   friends = data.friends;
   $("friendList").innerHTML = friends.map(friend => `
     <button class="row-btn" type="button" onclick="openDM(${friend.id}); closeFriendsTab()">
-      <img src="${friend.avatar}" alt="">
-      <div class="row-meta"><b>${esc(friend.display_name)}</b><small>@${esc(friend.username)} · ${esc(friend.status || 'online')}</small></div>
+      <span class="avatar-status-wrap"><img src="${friend.avatar}" alt=""><i class="presence-dot ${esc(friend.status || 'online')}"></i></span>
+      <div class="row-meta"><b>${esc(friend.display_name)}</b><small>@${esc(friend.username)} · ${statusLabel(friend.status || 'online')}</small></div>
     </button>
   `).join("");
   $("requests").innerHTML = data.incoming.map(req => `
     <div class="request-card">
       <img src="${req.avatar}" style="width:40px;height:40px;border-radius:14px" alt="">
       <div class="row-meta"><b>${esc(req.display_name)}</b><small>@${esc(req.username)}</small></div>
-      <button type="button" onclick="respondFriend(${req.request_id}, 'accept')">Accept</button>
-      <button type="button" class="danger" onclick="respondFriend(${req.request_id}, 'decline')">Decline</button>
+      <button type="button" class="round-action accept" title="Accept" onclick="respondFriend(${req.request_id}, 'accept')"><img src="/icons/phone.svg" alt=""></button>
+      <button type="button" class="round-action decline" title="Decline" onclick="respondFriend(${req.request_id}, 'decline')"><img src="/icons/x.svg" alt=""></button>
     </div>
   `).join("");
   renderGroupFriends();
@@ -311,17 +324,17 @@ function messageHTML(msg) {
   const edited = msg.edited ? '<span class="msg-edited">edited</span>' : '';
   const reactions = (msg.reactions || []).map(r => `<button class="reaction-chip" type="button" onclick="reactMessage(${msg.id}, '${r.emoji}')">${r.emoji} <span>${r.count}</span></button>`).join("");
   const controls = `
-    <button type="button" onclick="replyTo(${msg.id}, '${esc(msg.display_name).replace(/'/g, "\'")}')">Reply</button>
-    <button type="button" onclick="pinMessage(${msg.id})">${msg.pinned ? 'Unpin' : 'Pin'}</button>
-    <button type="button" onclick="reactMessage(${msg.id}, '❤️')">❤️</button>
-    <button type="button" onclick="reactMessage(${msg.id}, '😭')">😭</button>
-    <button type="button" onclick="reactMessage(${msg.id}, '🔥')">🔥</button>
+    <button type="button" title="Reply" onclick="replyTo(${msg.id}, '${esc(msg.display_name).replace(/'/g, "\'")}')"><img src="/icons/reply.svg" alt=""> Reply</button>
+    <button type="button" title="Pin" onclick="pinMessage(${msg.id})"><img src="/icons/pin.svg" alt=""> ${msg.pinned ? 'Unpin' : 'Pin'}</button>
+    <button type="button" title="Heart" onclick="reactMessage(${msg.id}, '❤️')"><img src="/icons/heart.svg" alt=""></button>
+    <button type="button" title="Cry" onclick="reactMessage(${msg.id}, '😭')"><img src="/icons/tear.svg" alt=""></button>
+    <button type="button" title="Fire" onclick="reactMessage(${msg.id}, '🔥')"><img src="/icons/flame.svg" alt=""></button>
     ${mine ? `<button type="button" onclick="editMessage(${msg.id})">Edit</button><button type="button" onclick="deleteMessage(${msg.id}, this)">Delete</button>` : ''}
   `;
 
   const replyBlock = msg.reply_preview ? `
     <div class="reply-inline">
-      <span>↪</span>
+      <span class="reply-icon"><img src="/icons/reply.svg" alt=""></span>
       <b>${esc(msg.reply_preview.display_name)}</b>
       <small>${esc(msg.reply_preview.body || '').slice(0, 120)}</small>
     </div>
@@ -379,22 +392,23 @@ function renderMembers() {
   let members = [];
   if (activeChat) members = activeChat.members || [];
   else if (activeScope?.type === "channel") {
-    members = friends;
-    const owner = me;
-    const seen = new Set();
-    members = [owner, ...members].filter(m => m && !seen.has(m.id) && seen.add(m.id));
+    members = activeSpace?.members || [];
   }
+  const canKick = activeSpace && Number(activeSpace.owner_id) === Number(me?.id);
   $("memberList").innerHTML = members.map(member => `
     <div class="member-chip">
-      <img src="${member.avatar}" alt="">
-      <div class="row-meta"><b>${esc(member.display_name)}</b><small>@${esc(member.username)}</small></div>
-      <span class="status-dot" style="background:${statusColor(member.status)}"></span>
+      <span class="avatar-status-wrap"><img src="${member.avatar}" alt=""><i class="presence-dot ${esc(member.status || 'online')}"></i></span>
+      <div class="row-meta"><b>${esc(member.display_name)}</b><small>@${esc(member.username)} · ${statusLabel(member.status || 'online')}</small></div>
+      ${canKick && Number(member.id) !== Number(me.id) ? `<button class="member-kick" type="button" onclick="kickServerMember(${member.id})" title="Kick member"><img src="/icons/x.svg" alt=""></button>` : ``}
     </div>
   `).join("") || `<p class="muted tiny">No members to show.</p>`;
 }
 
 function statusColor(status) {
   return status === "dnd" ? "#ff5a79" : status === "idle" ? "#f5c15d" : status === "offline" ? "#68718c" : "#3ed49a";
+}
+function statusLabel(status) {
+  return status === "dnd" ? "do not disturb" : status === "idle" ? "idle" : status === "offline" ? "offline" : "online";
 }
 
 function replyTo(id, name) {
@@ -1069,6 +1083,102 @@ const closeFriendsTabBtn = document.getElementById("closeFriendsTab");
 if (closeFriendsTabBtn) closeFriendsTabBtn.addEventListener("click", closeFriendsTab);
 
 
+
+function renderServerManageModal() {
+  if (!activeSpace) return;
+  $("serverManageTitle").textContent = activeSpace.name + " tools";
+  const memberIds = new Set((activeSpace.members || []).map(m => Number(m.id)));
+  const inviteable = friends.filter(f => !memberIds.has(Number(f.id)));
+  $("serverInviteList").innerHTML = inviteable.length ? inviteable.map(f => `
+    <div class="server-manage-row">
+      <span class="avatar-status-wrap"><img src="${f.avatar}" alt=""><i class="presence-dot ${esc(f.status || 'online')}"></i></span>
+      <div class="row-meta"><b>${esc(f.display_name)}</b><small>@${esc(f.username)}</small></div>
+      <button type="button" onclick="inviteFriendToServer(${f.id})">Invite</button>
+    </div>
+  `).join("") : `<p class="muted tiny">All of your friends are already in this server.</p>`;
+  const isOwner = Number(activeSpace.owner_id) === Number(me.id);
+  $("serverMemberManageList").innerHTML = (activeSpace.members || []).map(m => `
+    <div class="server-manage-row">
+      <span class="avatar-status-wrap"><img src="${m.avatar}" alt=""><i class="presence-dot ${esc(m.status || 'online')}"></i></span>
+      <div class="row-meta"><b>${esc(m.display_name)} ${Number(m.id) === Number(activeSpace.owner_id) ? '<span class="owner-badge">owner</span>' : ''}</b><small>@${esc(m.username)} · ${statusLabel(m.status || 'online')}</small></div>
+      ${isOwner && Number(m.id) !== Number(me.id) ? `<button class="danger" type="button" onclick="kickServerMember(${m.id})">Kick</button>` : ``}
+    </div>
+  `).join("");
+}
+
+async function inviteFriendToServer(userId) {
+  if (!activeSpace) return;
+  try {
+    await api(`/api/spaces/${activeSpace.id}/invite`, { method:"POST", body: JSON.stringify({ userId }) });
+    toast("Friend added to server.");
+    await refreshSpaces();
+    renderServerManageModal();
+    renderMembers();
+  } catch (err) { toast(err.message); }
+}
+
+async function kickServerMember(userId) {
+  if (!activeSpace) return;
+  try {
+    await api(`/api/spaces/${activeSpace.id}/kick`, { method:"POST", body: JSON.stringify({ userId }) });
+    toast("Member kicked.");
+    await refreshSpaces();
+    renderServerManageModal();
+    renderMembers();
+  } catch (err) { toast(err.message); }
+}
+
+async function deleteChannel(channelId, event) {
+  event?.stopPropagation?.();
+  const channel = (activeSpace?.channels || []).find(c => Number(c.id) === Number(channelId)) || activeChannel;
+  if (!channel) return toast("Select a channel first.");
+  const ok = await softConfirm(`Delete #${channel.name}?`, "Delete channel");
+  if (!ok) return;
+  try {
+    await api(`/api/channels/${channel.id}`, { method:"DELETE" });
+    if (activeChannel && Number(activeChannel.id) === Number(channel.id)) {
+      activeChannel = null; activeScope = null;
+      setRoomHeader(activeSpace.name, "Select a channel from this server.", "/logo-mark.svg");
+      $("messages").innerHTML = `<div class="empty-state"><img src="/logo-mark.svg" alt=""><h2>${esc(activeSpace.name)}</h2><p>Choose a channel on the left.</p></div>`;
+    }
+    await refreshSpaces();
+    toast("Channel deleted.");
+  } catch (err) { toast(err.message); }
+}
+
+async function deleteActiveChannel() {
+  if (!activeChannel) return toast("Select a channel to delete.");
+  await deleteChannel(activeChannel.id);
+}
+
+async function deleteActiveServer() {
+  if (!activeSpace) return;
+  const ok = await softConfirm(`Delete ${activeSpace.name}? This removes all channels and messages in it.`, "Delete server");
+  if (!ok) return;
+  try {
+    await api(`/api/spaces/${activeSpace.id}`, { method:"DELETE" });
+    toast("Server deleted.");
+    activeSpace = null; activeChannel = null; activeScope = null;
+    await refreshSpaces();
+    showDMHome();
+  } catch (err) { toast(err.message); }
+}
+
+function softConfirm(text, title = "Are you sure?") {
+  return new Promise(resolve => {
+    const overlay = document.createElement("div");
+    overlay.className = "soft-confirm-overlay";
+    overlay.innerHTML = `<div class="soft-confirm"><h3>${esc(title)}</h3><p>${esc(text)}</p><div><button class="ghost" data-no>No</button><button class="danger" data-yes>Yes</button></div></div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector("[data-no]").onclick = () => { overlay.remove(); resolve(false); };
+    overlay.querySelector("[data-yes]").onclick = () => { overlay.remove(); resolve(true); };
+  });
+}
+
+$("inviteServerBtn")?.addEventListener("click", () => { if (!activeSpace) return; renderServerManageModal(); openModal("serverManageModal"); });
+$("deleteChannelBtn")?.addEventListener("click", deleteActiveChannel);
+$("deleteServerBtn")?.addEventListener("click", deleteActiveServer);
+
 window.selectSpace = selectSpace;
 window.openChannel = openChannel;
 window.openChat = openChat;
@@ -1083,6 +1193,9 @@ window.reactMessage = reactMessage;
 window.pinMessage = pinMessage;
 window.editMessage = editMessage;
 window.deleteMessage = deleteMessage;
+window.deleteChannel = deleteChannel;
+window.inviteFriendToServer = inviteFriendToServer;
+window.kickServerMember = kickServerMember;
 
 boot();
 
@@ -1093,13 +1206,6 @@ document.querySelectorAll(".settings-tab").forEach(btn => {
     setSettingsTab(btn.dataset.tab);
   });
 });
-const settingsProfileBtn = document.getElementById("settingsOpenProfile");
-if (settingsProfileBtn) {
-  settingsProfileBtn.addEventListener("click", () => {
-    document.getElementById("settingsModal")?.classList.add("hidden");
-    document.getElementById("profileModal")?.classList.remove("hidden");
-  });
-}
 
 
 function showDMHome() {
@@ -1138,6 +1244,7 @@ function updateViewMode() {
   $("newChannelBtn")?.classList.toggle("hidden", !isServer);
   $("newGroupBtn")?.classList.toggle("hidden", isServer);
   $("serverChannelsSection")?.classList.toggle("hidden", !isServer);
+  $("serverToolsSection")?.classList.toggle("hidden", !isServer);
 }
 
 const dmHomeBtn = document.getElementById("dmHomeBtn");
