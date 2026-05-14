@@ -464,10 +464,18 @@ app.get("/api/search", requireAuth, (req, res) => {
 });
 
 app.get("/api/ice", requireAuth, (req, res) => {
-  const iceServers = [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
+  const iceServers = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:global.stun.twilio.com:3478" }
+  ];
+
   if (process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_PASSWORD) {
-    iceServers.push({ urls: process.env.TURN_URL, username: process.env.TURN_USERNAME, credential: process.env.TURN_PASSWORD });
+    const urls = String(process.env.TURN_URL).split(',').map(s => s.trim()).filter(Boolean);
+    iceServers.push({ urls: urls.length > 1 ? urls : urls[0], username: process.env.TURN_USERNAME, credential: process.env.TURN_PASSWORD });
   }
+
   res.json({ iceServers });
 });
 
