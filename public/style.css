@@ -1715,3 +1715,173 @@ body{background:#0a0b0f !important;color:var(--text) !important;}
   .message-panel > .call-modal{height:212px !important;}
   .message-panel > .call-modal .call-top #endCallBtn{right:calc(50% - 158px) !important;}
 }
+
+
+/* Final Discord-like call polish + custom icon buttons + attachments */
+.topbar-actions button{
+  display:inline-flex !important;
+  align-items:center !important;
+  gap:8px !important;
+}
+.topbar-actions button img,
+.call-controls button img,
+.call-end-btn img,
+.composer .icon-btn img,
+.file-attachment img,
+.system-icon img{
+  width:18px;
+  height:18px;
+  display:block;
+  filter:brightness(0) invert(1);
+}
+.system-icon img{filter:none;width:20px;height:20px;}
+.composer .icon-btn{
+  display:grid !important;
+  place-items:center !important;
+}
+.composer .icon-btn img{width:20px;height:20px;opacity:.88;}
+.message-panel > .call-modal{
+  height:245px !important;
+  background:#050505 !important;
+  border-bottom:1px solid #15161a !important;
+}
+.message-panel > .call-modal .call-card{
+  display:grid !important;
+  grid-template-rows:auto 1fr auto !important;
+  align-items:center !important;
+  justify-items:center !important;
+  gap:12px !important;
+  padding:18px 20px 16px !important;
+}
+.message-panel > .call-modal .call-top{
+  position:static !important;
+  width:100% !important;
+  display:flex !important;
+  align-items:flex-start !important;
+  justify-content:space-between !important;
+  pointer-events:none !important;
+}
+.message-panel > .call-modal .call-top h2{
+  font-size:14px !important;
+  font-weight:800 !important;
+  letter-spacing:-.02em !important;
+}
+.message-panel > .call-modal .call-top p{
+  font-size:12px !important;
+  color:#8f929b !important;
+  text-transform:lowercase !important;
+}
+.message-panel > .call-modal .call-body{
+  align-self:center !important;
+  transform:translateY(4px);
+}
+.message-panel > .call-modal .call-avatar-pair{gap:24px !important;}
+.message-panel > .call-modal .call-avatar-pair img{
+  width:82px !important;
+  height:82px !important;
+  border-radius:50% !important;
+  border:1px solid rgba(255,255,255,.12) !important;
+  background:#111216 !important;
+}
+.message-panel > .call-modal .call-controls{
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  gap:12px !important;
+  margin:0 !important;
+  padding:0 !important;
+}
+.message-panel > .call-modal .call-controls button,
+.message-panel > .call-modal .incoming button{
+  height:52px !important;
+  min-width:72px !important;
+  padding:0 18px !important;
+  border-radius:14px !important;
+  background:#17181d !important;
+  border:1px solid #2a2c34 !important;
+  color:#f5f5f6 !important;
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  gap:9px !important;
+  font-size:14px !important;
+  font-weight:800 !important;
+}
+.message-panel > .call-modal .call-controls button:hover,
+.message-panel > .call-modal .incoming button:hover{
+  background:#202229 !important;
+  transform:none !important;
+}
+.message-panel > .call-modal .call-top #endCallBtn{
+  position:absolute !important;
+  left:calc(50% + 118px) !important;
+  right:auto !important;
+  top:auto !important;
+  bottom:16px !important;
+  width:72px !important;
+  height:52px !important;
+  border-radius:14px !important;
+  background:#e23c4f !important;
+  border:1px solid #e23c4f !important;
+  color:#fff !important;
+  display:grid !important;
+  place-items:center !important;
+  pointer-events:auto !important;
+  font-size:0 !important;
+}
+.message-panel > .call-modal .call-top #endCallBtn::before{content:none !important;}
+.message-panel > .call-modal .call-top #endCallBtn img{width:22px;height:22px;filter:brightness(0) invert(1);}
+.message-panel > .call-modal .incoming{
+  position:static !important;
+  transform:none !important;
+  display:flex !important;
+  justify-content:center !important;
+  gap:12px !important;
+}
+.message-panel > .call-modal .incoming.hidden{display:none !important;}
+.message-panel > .call-modal.incoming-call .call-controls{display:none !important;}
+.message-panel > .call-modal .incoming .primary-btn{background:#f2f2f2 !important;color:#050505 !important;}
+.message-panel > .call-modal .incoming .danger{background:#e23c4f !important;color:#fff !important;}
+.message-panel > .call-modal .call-controls #toggleScreenBtn{display:none !important;}
+.msg-attachments{
+  margin-top:8px;
+  display:grid;
+  gap:8px;
+  max-width:min(560px,100%);
+}
+.image-attachment{
+  display:block;
+  width:max-content;
+  max-width:100%;
+  border:1px solid #23242a;
+  border-radius:12px;
+  overflow:hidden;
+  background:#0c0d10;
+}
+.image-attachment img{
+  display:block;
+  max-width:min(440px,100%);
+  max-height:360px;
+  object-fit:contain;
+}
+.file-attachment{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  width:max-content;
+  max-width:100%;
+  color:#f4f4f5;
+  text-decoration:none;
+  background:#15161b;
+  border:1px solid #262832;
+  border-radius:12px;
+  padding:11px 13px;
+  font-weight:800;
+}
+.file-attachment img{opacity:.8;}
+.file-attachment:hover{background:#1d1f27;}
+@media (max-width:900px){
+  .message-panel > .call-modal{height:230px !important;}
+  .message-panel > .call-modal .call-avatar-pair img{width:70px !important;height:70px !important;}
+  .message-panel > .call-modal .call-top #endCallBtn{left:calc(50% + 106px) !important;}
+}
