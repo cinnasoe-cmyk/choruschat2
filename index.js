@@ -118,7 +118,7 @@ function requireAuth(req, res, next) {
 
 function userCanAccessSpace(userId, spaceId) {
   const space = spaceById(spaceId);
-  return !!space && (space.owner_id === Number(userId) || (space.members || []).includes(Number(userId)));
+  return !!space && (Number(space.owner_id) === Number(userId) || (space.members || []).map(Number).includes(Number(userId)));
 }
 
 function userCanAccessChannel(userId, channelId) {
@@ -182,6 +182,8 @@ function listSpaceSummaries(userId) {
       name: s.name,
       icon: s.icon || "/logo-mark.svg",
       theme: s.theme || "aurora",
+      owner_id: s.owner_id,
+      members: (s.members || []).map(publicUser).filter(Boolean),
       channels: data.channels.filter(c => Number(c.space_id) === Number(s.id))
     }));
 }
@@ -438,6 +440,69 @@ app.post("/api/spaces/:spaceId/channels", requireAuth, (req, res) => {
   saveData();
   notifySpace(spaceId, "spaces:update", {});
   res.json({ channel });
+});
+
+app.delete("/api/channels/:channelId", requireAuth, (req, res) => {
+  const channelId = Number(req.params.channelId);
+  const channel = channelById(channelId);
+  if (!channel) return res.status(404).json({ error: "Channel not found." });
+  const space = spaceById(channel.space_id);
+  if (!space || Number(space.owner_id) !== Number(req.session.userId)) return res.status(403).json({ error: "Only the server owner can delete channels." });
+  const deletedIds = new Set(data.messages.filter(m => m.scope === "channel" && Number(m.scope_id) === channelId).map(m => Number(m.id)));
+  data.channels = data.channels.filter(c => Number(c.id) !== channelId);
+  data.messages = data.messages.filter(m => !(m.scope === "channel" && Number(m.scope_id) === channelId));
+  data.reactions = data.reactions.filter(r => !deletedIds.has(Number(r.message_id)));
+  saveData();
+  notifySpace(space.id, "spaces:update", {});
+  io.to(`channel:${channelId}`).emit("messages:cleared", { scope: "channel", scopeId: channelId });
+  res.json({ ok: true });
+});
+
+app.delete("/api/spaces/:spaceId", requireAuth, (req, res) => {
+  const spaceId = Number(req.params.spaceId);
+  const space = spaceById(spaceId);
+  if (!space) return res.status(404).json({ error: "Server not found." });
+  if (Number(space.owner_id) !== Number(req.session.userId)) return res.status(403).json({ error: "Only the server owner can delete this server." });
+  const channelIds = new Set(data.channels.filter(c => Number(c.space_id) === spaceId).map(c => Number(c.id)));
+  const messageIds = new Set(data.messages.filter(m => m.scope === "channel" && channelIds.has(Number(m.scope_id))).map(m => Number(m.id)));
+  const memberIds = [...(space.members || [])];
+  data.spaces = data.spaces.filter(s => Number(s.id) !== spaceId);
+  data.channels = data.channels.filter(c => Number(c.space_id) !== spaceId);
+  data.messages = data.messages.filter(m => !(m.scope === "channel" && channelIds.has(Number(m.scope_id))));
+  data.reactions = data.reactions.filter(r => !messageIds.has(Number(r.message_id)));
+  saveData();
+  memberIds.forEach(id => notifyUser(id, "spaces:update", {}));
+  res.json({ ok: true });
+});
+
+app.post("/api/spaces/:spaceId/invite", requireAuth, (req, res) => {
+  const spaceId = Number(req.params.spaceId);
+  const space = spaceById(spaceId);
+  if (!space) return res.status(404).json({ error: "Server not found." });
+  if (!userCanAccessSpace(req.session.userId, spaceId)) return res.status(403).json({ error: "No access." });
+  const targetId = Number(req.body.userId || 0);
+  const target = data.users.find(u => Number(u.id) === targetId || u.username === normalizeUsername(req.body.username));
+  if (!target) return res.status(404).json({ error: "User not found." });
+  if (!areFriends(req.session.userId, target.id) && Number(space.owner_id) !== Number(req.session.userId)) return res.status(403).json({ error: "You can only invite friends." });
+  if (!(space.members || []).includes(Number(target.id))) space.members.push(Number(target.id));
+  saveData();
+  notifySpace(space.id, "spaces:update", {});
+  notifyUser(target.id, "spaces:update", {});
+  res.json({ ok: true, member: publicUser(target.id) });
+});
+
+app.post("/api/spaces/:spaceId/kick", requireAuth, (req, res) => {
+  const spaceId = Number(req.params.spaceId);
+  const targetId = Number(req.body.userId || 0);
+  const space = spaceById(spaceId);
+  if (!space) return res.status(404).json({ error: "Server not found." });
+  if (Number(space.owner_id) !== Number(req.session.userId)) return res.status(403).json({ error: "Only the server owner can kick members." });
+  if (Number(space.owner_id) === targetId) return res.status(400).json({ error: "You cannot kick the owner." });
+  space.members = (space.members || []).filter(id => Number(id) !== targetId);
+  saveData();
+  notifySpace(space.id, "spaces:update", {});
+  notifyUser(targetId, "spaces:update", {});
+  res.json({ ok: true });
 });
 
 // Messages unified
