@@ -193,7 +193,7 @@ async function refreshChats() {
   chats = data.chats;
   $("chatList").innerHTML = chats.map(chat => {
     const other = chat.type === "dm" ? (chat.members || []).find(m => Number(m.id) !== Number(me.id)) : null;
-    const status = other?.status || "online";
+    const status = normalizeStatus(other?.status);
     return `
     <button class="row-btn ${activeChat && Number(activeChat.id) === Number(chat.id) ? 'active' : ''}" type="button" onclick="openChat(${chat.id})">
       <span class="avatar-status-wrap"><img src="${chat.avatar}" alt=""><i class="presence-dot ${esc(status)}"></i></span>
@@ -207,8 +207,8 @@ async function refreshFriends() {
   friends = data.friends;
   $("friendList").innerHTML = friends.map(friend => `
     <button class="row-btn" type="button" onclick="openDM(${friend.id}); closeFriendsTab()">
-      <span class="avatar-status-wrap"><img src="${friend.avatar}" alt=""><i class="presence-dot ${esc(friend.status || 'online')}"></i></span>
-      <div class="row-meta"><b>${esc(friend.display_name)}</b><small>@${esc(friend.username)} · ${statusLabel(friend.status || 'online')}</small></div>
+      <span class="avatar-status-wrap"><img src="${friend.avatar}" alt=""><i class="presence-dot ${esc(normalizeStatus(friend.status))}"></i></span>
+      <div class="row-meta"><b>${esc(friend.display_name)}</b><small>@${esc(friend.username)} · ${statusLabel(normalizeStatus(friend.status))}</small></div>
     </button>
   `).join("");
   $("requests").innerHTML = data.incoming.map(req => `
@@ -356,7 +356,7 @@ function messageHTML(msg) {
 
   return `
     <article class="msg ${mine ? 'mine' : ''} ${isDeleted ? 'deleted' : ''}" id="msg-${msg.id}">
-      <img class="avatar" src="${msg.avatar || '/user-default.svg'}" alt="">
+      <img class="avatar profile-pop-trigger" src="${msg.avatar || '/user-default.svg'}" alt="" onclick="openUserProfilePopup(event, ${msg.sender_id})">
       <div class="msg-main">
         <div class="msg-head">
           <b class="msg-name">${esc(msg.display_name)}</b>
@@ -398,17 +398,23 @@ function renderMembers() {
   const canKick = activeSpace && Number(activeSpace.owner_id) === Number(me?.id);
   $("memberList").innerHTML = members.map(member => `
     <div class="member-chip">
-      <span class="avatar-status-wrap"><img src="${member.avatar}" alt=""><i class="presence-dot ${esc(member.status || 'online')}"></i></span>
-      <div class="row-meta"><b>${esc(member.display_name)}</b><small>@${esc(member.username)} · ${statusLabel(member.status || 'online')}</small></div>
+      <span class="avatar-status-wrap"><img src="${member.avatar}" alt=""><i class="presence-dot ${esc(normalizeStatus(member.status))}"></i></span>
+      <div class="row-meta"><b>${esc(member.display_name)}</b><small>@${esc(member.username)} · ${statusLabel(normalizeStatus(member.status))}</small></div>
       ${canKick && Number(member.id) !== Number(me.id) ? `<button class="member-kick" type="button" onclick="kickServerMember(${member.id})" title="Kick member"><img src="/icons/x.svg" alt=""></button>` : ``}
     </div>
   `).join("") || `<p class="muted tiny">No members to show.</p>`;
 }
 
+function normalizeStatus(status) {
+  return ["online","idle","dnd","offline"].includes(String(status || "")) ? String(status) : "offline";
+}
+
 function statusColor(status) {
-  return status === "dnd" ? "#ff5a79" : status === "idle" ? "#f5c15d" : status === "offline" ? "#68718c" : "#3ed49a";
+  status = normalizeStatus(status);
+  return status === "dnd" ? "#ff4f65" : status === "idle" ? "#f5c15d" : status === "offline" ? "#68718c" : "#3ed49a";
 }
 function statusLabel(status) {
+  status = normalizeStatus(status);
   return status === "dnd" ? "do not disturb" : status === "idle" ? "idle" : status === "offline" ? "offline" : "online";
 }
 
@@ -523,6 +529,73 @@ function setSettingsTab(tabName) {
   document.querySelectorAll(".settings-tab").forEach(x => x.classList.toggle("active", x.dataset.tab === tabName));
   document.querySelectorAll(".settings-page").forEach(x => x.classList.toggle("active", x.dataset.page === tabName));
 }
+
+function allKnownUsers() {
+  const map = new Map();
+  if (me) map.set(Number(me.id), me);
+  for (const f of friends || []) map.set(Number(f.id), f);
+  for (const c of chats || []) for (const m of (c.members || [])) map.set(Number(m.id), m);
+  if (activeChat?.members) for (const m of activeChat.members) map.set(Number(m.id), m);
+  if (activeSpace?.members) for (const m of activeSpace.members) map.set(Number(m.id), m);
+  return map;
+}
+
+function ensureUserProfilePopup() {
+  let popup = document.getElementById("userProfilePopup");
+  if (popup) return popup;
+  popup = document.createElement("div");
+  popup.id = "userProfilePopup";
+  popup.className = "user-profile-popover hidden";
+  popup.innerHTML = `
+    <div class="user-pop-banner"></div>
+    <div class="user-pop-body">
+      <div class="user-pop-avatar-wrap"><img id="userPopAvatar" src="/user-default.svg" alt=""><i id="userPopStatusDot" class="presence-dot offline"></i></div>
+      <button type="button" id="userPopAddBtn" class="user-pop-round" title="Add friend"><img src="/icons/friend-request.svg" alt=""></button>
+      <button type="button" id="userPopMoreBtn" class="user-pop-round more" title="More">•••</button>
+      <h2 id="userPopName">user</h2>
+      <p id="userPopUser">@user</p>
+      <p id="userPopBio" class="user-pop-bio">No bio yet.</p>
+      <div class="user-pop-status-line"><span id="userPopStatusText">offline</span></div>
+      <button type="button" id="userPopMessageBtn" class="user-pop-message">Message</button>
+    </div>
+  `;
+  document.body.appendChild(popup);
+  return popup;
+}
+
+function openUserProfilePopup(event, userId) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  const user = allKnownUsers().get(Number(userId));
+  if (!user) return;
+  const popup = ensureUserProfilePopup();
+  const status = normalizeStatus(user.status);
+  document.getElementById("userPopAvatar").src = user.avatar || "/user-default.svg";
+  document.getElementById("userPopName").textContent = user.display_name || user.username || "user";
+  document.getElementById("userPopUser").textContent = "@" + (user.username || "user");
+  document.getElementById("userPopBio").textContent = user.bio || user.tagline || "No bio yet.";
+  const dot = document.getElementById("userPopStatusDot");
+  dot.className = "presence-dot " + status;
+  document.getElementById("userPopStatusText").textContent = statusLabel(status);
+  document.getElementById("userPopMessageBtn").onclick = () => { popup.classList.add("hidden"); openDm(user.id); };
+  document.getElementById("userPopAddBtn").onclick = () => toast("Open Friends → Add friend to send a request.");
+  const rect = event.currentTarget.getBoundingClientRect();
+  const width = 310;
+  const left = Math.min(window.innerWidth - width - 12, Math.max(12, rect.right + 14));
+  const top = Math.min(window.innerHeight - 440, Math.max(12, rect.top - 70));
+  popup.style.left = left + "px";
+  popup.style.top = top + "px";
+  popup.classList.remove("hidden");
+}
+window.openUserProfilePopup = openUserProfilePopup;
+
+document.addEventListener("click", (e) => {
+  const popup = document.getElementById("userProfilePopup");
+  if (!popup || popup.classList.contains("hidden")) return;
+  if (popup.contains(e.target) || e.target.closest(".profile-pop-trigger")) return;
+  popup.classList.add("hidden");
+});
+
 function closeSelfPopup() {
   $("selfPopup")?.classList.add("hidden");
 }
@@ -1113,7 +1186,7 @@ function renderServerManageModal() {
   const inviteable = friends.filter(f => !memberIds.has(Number(f.id)));
   $("serverInviteList").innerHTML = inviteable.length ? inviteable.map(f => `
     <div class="server-manage-row">
-      <span class="avatar-status-wrap"><img src="${f.avatar}" alt=""><i class="presence-dot ${esc(f.status || 'online')}"></i></span>
+      <span class="avatar-status-wrap"><img src="${f.avatar}" alt=""><i class="presence-dot ${esc(normalizeStatus(f.status))}"></i></span>
       <div class="row-meta"><b>${esc(f.display_name)}</b><small>@${esc(f.username)}</small></div>
       <button type="button" onclick="inviteFriendToServer(${f.id})">Invite</button>
     </div>
