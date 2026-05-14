@@ -123,35 +123,32 @@ async function refreshEverything() {
     if (chats[0]) {
       openChat(chats[0].id);
     } else {
-      setRoomHeader("Your messages", "Add a friend or create a group to start talking.", "/logo-mark.svg");
-      $("messages").innerHTML = `
-        <div class="empty-state">
-          <img src="/logo-mark.svg" alt="">
-          <h2>No messages yet</h2>
-          <p>Add a friend by username, accept a request, or make a group chat. Your private chats will live here first.</p>
-        </div>
-      `;
-      renderPinned();
-      renderMembers();
+      showDMHome();
     }
   }
+  updateViewMode();
 }
 
 async function refreshSpaces() {
   const data = await api("/api/spaces");
-  spaces = data.spaces;
+  spaces = data.spaces || [];
   $("spaceList").innerHTML = spaces.map(space => `
-    <button class="space-pill ${activeSpace && Number(activeSpace.id) === Number(space.id) ? 'active' : ''}" type="button" onclick="selectSpace(${space.id})" title="${esc(space.name)}">
-      <img src="${space.icon}" style="width:34px;height:34px;border-radius:12px" alt="">
+    <button class="space-pill ${activeSpace && Number(activeSpace.id) === Number(space.id) ? 'active' : ''}" onclick="selectSpace(${space.id})" title="${esc(space.name)}">
+      <img src="${space.icon || "/logo-mark.svg"}" alt="">
     </button>
   `).join("");
-  if (!activeSpace && spaces[0]) activeSpace = spaces[0];
+  if (activeSpace) {
+    activeSpace = spaces.find(s => Number(s.id) === Number(activeSpace.id)) || null;
+  }
   renderSpaceSidebar();
+  updateViewMode();
 }
 
 function renderSpaceSidebar() {
+  const section = $("serverChannelsSection");
   if (activeSpace) {
     $("activeSpaceName").textContent = activeSpace.name;
+    if (section) section.classList.remove("hidden");
     $("channelList").innerHTML = (activeSpace.channels || []).length ? activeSpace.channels.map(ch => `
       <button class="row-btn ${activeChannel && Number(activeChannel.id) === Number(ch.id) ? 'active' : ''}" type="button" onclick="openChannel(${ch.id})">
         <div class="row-meta"><b># ${esc(ch.name)}</b><small>${esc(activeSpace.name)} channel</small></div>
@@ -159,8 +156,10 @@ function renderSpaceSidebar() {
     `).join("") : `<div class="soft-empty">No channels yet. Tap + to create one.</div>`;
   } else {
     $("activeSpaceName").textContent = "messages";
-    $("channelList").innerHTML = `<div class="soft-empty">Select a server to view its channels.</div>`;
+    if (section) section.classList.add("hidden");
+    $("channelList").innerHTML = "";
   }
+  updateViewMode();
 }
 
 async function refreshChats() {
@@ -205,19 +204,23 @@ function selectSpace(spaceId) {
   activeSpace = spaces.find(s => Number(s.id) === Number(spaceId)) || null;
   activeChannel = null;
   activeChat = null;
-  activeScope = activeSpace ? "space" : null;
-  renderAll();
+  activeScope = null;
+  replyTarget = null;
+  renderSpaceSidebar();
+  refreshSpaces();
+  refreshChats();
   if (activeSpace) {
     setRoomHeader(activeSpace.name, "Select a channel from this server.", "/logo-mark.svg");
     $("messages").innerHTML = `
       <div class="empty-state">
         <img src="/logo-mark.svg" alt="">
         <h2>${esc(activeSpace.name)}</h2>
-        <p>Choose a channel on the left, or leave this server view by opening a DM.</p>
+        <p>Choose a channel on the left, or tap the music-note logo to return to your messages.</p>
       </div>
     `;
     renderPinned();
     renderMembers();
+    updateViewMode();
   }
 }
 
@@ -234,14 +237,16 @@ function setRoomHeader(title, subtitle, avatar) {
 }
 
 async function openChannel(channelId) {
-  activeChannel = activeSpace?.channels?.find(c => Number(c.id) === Number(channelId)) || spaces.flatMap(s => s.channels).find(c => Number(c.id) === Number(channelId));
+  activeChannel = activeSpace?.channels?.find(c => Number(c.id) === Number(channelId)) || spaces.flatMap(s => s.channels || []).find(c => Number(c.id) === Number(channelId));
   if (!activeChannel) return;
+  if (!activeSpace) activeSpace = spaces.find(s => (s.channels || []).some(c => Number(c.id) === Number(channelId))) || null;
   activeChat = null;
   activeScope = { type: "channel", id: activeChannel.id };
   $("sidebar").classList.remove("open");
-  setRoomHeader(`# ${activeChannel.name}`, `${activeChannel.spaceName || activeSpace?.name || "Space"} channel`, "/logo-mark.svg");
-  await loadMessages("channel", activeChannel.id);
+  setRoomHeader(`# ${activeChannel.name}`, `${activeSpace?.name || "Server"} channel`, "/logo-mark.svg");
   renderSpaceSidebar();
+  updateViewMode();
+  await loadMessages("channel", activeChannel.id);
   renderMembers();
 }
 
@@ -250,10 +255,11 @@ async function openChat(chatId) {
   activeChannel = null;
   activeChat = chats.find(c => Number(c.id) === Number(chatId));
   if (!activeChat) return;
-  activeChannel = null;
   activeScope = { type: "chat", id: activeChat.id };
   $("sidebar").classList.remove("open");
-  setRoomHeader(activeChat.title, activeChat.members.map(m => m.display_name).join(", "), activeChat.avatar);
+  setRoomHeader(activeChat.title, activeChat.members.map(m => m.display_name).join(", "), activeChat.avatar || "/user-default.svg");
+  renderSpaceSidebar();
+  updateViewMode();
   await loadMessages("chat", activeChat.id);
   refreshChats();
   renderMembers();
@@ -738,3 +744,40 @@ if (settingsProfileBtn) {
     document.getElementById("profileModal")?.classList.remove("hidden");
   });
 }
+
+
+function showDMHome() {
+  activeSpace = null;
+  activeChannel = null;
+  activeChat = null;
+  activeScope = null;
+  replyTarget = null;
+  renderSpaceSidebar();
+  refreshSpaces();
+  refreshChats();
+  setRoomHeader("Your messages", "Pick a DM, group, or create a new conversation.", "/logo-mark.svg");
+  $("messages").innerHTML = `
+    <div class="empty-state">
+      <img src="/logo-mark.svg" alt="">
+      <h2>Your messages</h2>
+      <p>Add a friend, accept a request, or create a group chat. Servers stay hidden until you open one.</p>
+    </div>
+  `;
+  renderPinned();
+  renderMembers();
+  updateViewMode();
+}
+
+function updateViewMode() {
+  const isChat = !!(activeScope && activeScope.type === "chat");
+  const isChannel = !!(activeScope && activeScope.type === "channel");
+  const isServer = !!activeSpace;
+  $("chatActions")?.classList.toggle("hidden", !isChat);
+  $("composer")?.classList.toggle("hidden", !(isChat || isChannel));
+  $("newChannelBtn")?.classList.toggle("hidden", !isServer);
+  $("newGroupBtn")?.classList.remove("hidden");
+  $("serverChannelsSection")?.classList.toggle("hidden", !isServer);
+}
+
+const dmHomeBtn = document.getElementById("dmHomeBtn");
+if (dmHomeBtn) dmHomeBtn.addEventListener("click", showDMHome);
