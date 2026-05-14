@@ -21,6 +21,10 @@ let activeCall = {
   pendingIce: [],
   muted: false,
   peerMuted: false,
+  speaking: false,
+  peerSpeaking: false,
+  speakingTimer: null,
+  speakingContext: null,
   connected: false
 };
 
@@ -499,7 +503,38 @@ $("registerForm").onsubmit = async e => {
   } catch (err) { $("authError").textContent = err.message; }
 };
 
-$("selfCard").onclick = () => openModal("profileModal");
+
+function setSettingsTab(tabName) {
+  document.querySelectorAll(".settings-tab").forEach(x => x.classList.toggle("active", x.dataset.tab === tabName));
+  document.querySelectorAll(".settings-page").forEach(x => x.classList.toggle("active", x.dataset.page === tabName));
+}
+function closeSelfPopup() {
+  $("selfPopup")?.classList.add("hidden");
+}
+function openSelfPopup() {
+  const popup = $("selfPopup");
+  if (!popup) return;
+  if ($("selfPopupAvatar")) $("selfPopupAvatar").src = me?.avatar || "/user-default.svg";
+  if ($("selfPopupName")) $("selfPopupName").textContent = me?.display_name || me?.username || "user";
+  if ($("selfPopupUser")) $("selfPopupUser").textContent = "@" + (me?.username || "user");
+  if ($("selfPopupBio")) $("selfPopupBio").textContent = me?.bio || me?.tagline || "No bio yet.";
+  if ($("selfPopupStatus")) $("selfPopupStatus").textContent = me?.status || "online";
+  popup.classList.toggle("hidden");
+}
+$("selfCard").onclick = (e) => {
+  e.stopPropagation();
+  openSelfPopup();
+};
+document.addEventListener("click", (e) => {
+  if (!$("selfPopup") || $("selfPopup").classList.contains("hidden")) return;
+  if ($("selfPopup").contains(e.target) || $("selfCard").contains(e.target)) return;
+  closeSelfPopup();
+});
+$("selfPopupEditBtn")?.addEventListener("click", () => {
+  closeSelfPopup();
+  openModal("settingsModal");
+  setSettingsTab("profile");
+});
 $("openSettings").onclick = () => openModal("settingsModal");
 $("createSpaceBtn").onclick = () => openModal("spaceModal");
 $("newChannelBtn").onclick = () => openModal("channelModal");
@@ -768,11 +803,59 @@ function getCallTarget() {
   return null;
 }
 
+
+function stopSpeakingMonitor() {
+  if (activeCall.speakingTimer) {
+    clearInterval(activeCall.speakingTimer);
+    activeCall.speakingTimer = null;
+  }
+  try { activeCall.speakingContext?.close?.(); } catch {}
+  activeCall.speakingContext = null;
+}
+
+function startSpeakingMonitor() {
+  stopSpeakingMonitor();
+  if (!activeCall.localStream) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    const source = ctx.createMediaStreamSource(activeCall.localStream);
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    activeCall.speakingContext = ctx;
+    let lastState = false;
+    let lastSent = 0;
+    activeCall.speakingTimer = setInterval(() => {
+      if (!activeCall.localStream) return;
+      analyser.getByteFrequencyData(data);
+      let total = 0;
+      for (const value of data) total += value;
+      const avg = total / data.length;
+      const speaking = !activeCall.muted && avg > 13;
+      activeCall.speaking = speaking;
+      updateCallMuteUi();
+      const now = Date.now();
+      if ((speaking !== lastState || now - lastSent > 900) && activeCall.chatId && activeCall.peerId) {
+        socket.emit("call:speaking", { chatId: activeCall.chatId, targetId: activeCall.peerId, speaking });
+        lastState = speaking;
+        lastSent = now;
+      }
+    }, 140);
+  } catch (err) {
+    console.warn("Voice activity unavailable", err);
+  }
+}
+
 function updateCallMuteUi() {
   const selfBadge = $("callSelfMuted");
   const peerBadge = $("callPeerMuted");
   if (selfBadge) selfBadge.classList.toggle("hidden", !activeCall.muted);
   if (peerBadge) peerBadge.classList.toggle("hidden", !activeCall.peerMuted);
+  $("callSelfWrap")?.classList.toggle("speaking", !!activeCall.speaking && !activeCall.muted);
+  $("callPeerWrap")?.classList.toggle("speaking", !!activeCall.peerSpeaking && !activeCall.peerMuted);
   const muteSpan = $("muteBtn")?.querySelector("span");
   const muteImg = $("muteBtn")?.querySelector("img");
   if (muteSpan) muteSpan.textContent = activeCall.muted ? "Unmute" : "Mute";
@@ -784,7 +867,8 @@ function resetCall(send = true) {
   try { activeCall.pc?.close(); } catch {}
   activeCall.localStream?.getTracks()?.forEach(track => track.stop());
   activeCall.screenStream?.getTracks()?.forEach(track => track.stop());
-  activeCall = { pc:null, localStream:null, screenStream:null, chatId:null, peerId:null, incoming:null, pendingIce:[], muted:false, peerMuted:false, connected:false };
+  stopSpeakingMonitor();
+  activeCall = { pc:null, localStream:null, screenStream:null, chatId:null, peerId:null, incoming:null, pendingIce:[], muted:false, peerMuted:false, speaking:false, peerSpeaking:false, speakingTimer:null, speakingContext:null, connected:false };
   $("localVideo").srcObject = null;
   $("remoteVideo").srcObject = null;
   $("remoteAudio").srcObject = null;
@@ -814,6 +898,7 @@ async function startCall() {
     activeCall.peerId = target.id;
     showCall(`Calling ${target.display_name}`, "getting microphone", false);
     await ensureLocalAudio();
+    startSpeakingMonitor();
     setCallStatus("ringing");
     socket.emit("call:invite", { chatId: activeChat.id, targetId: target.id });
   } catch (err) {
@@ -828,6 +913,7 @@ $("acceptCallBtn").onclick = async () => {
   try {
     setCallStatus("getting microphone");
     await ensureLocalAudio();
+    startSpeakingMonitor();
     socket.emit("call:accept", { chatId: incoming.chatId, targetId: incoming.from.id });
     $("incomingControls").classList.add("hidden");
     setCallStatus("connecting");
@@ -849,6 +935,7 @@ $("muteBtn").onclick = () => {
   if (!activeCall.localStream) return toast("Join the call before muting.");
   activeCall.muted = !activeCall.muted;
   activeCall.localStream.getAudioTracks().forEach(track => track.enabled = !activeCall.muted);
+  if (activeCall.muted) { activeCall.speaking = false; socket.emit("call:speaking", { chatId: activeCall.chatId, targetId: activeCall.peerId, speaking:false }); }
   updateCallMuteUi();
   if (activeCall.chatId && activeCall.peerId) {
     socket.emit("call:mute", { chatId: activeCall.chatId, targetId: activeCall.peerId, muted: activeCall.muted });
@@ -915,6 +1002,12 @@ function wireCallSocket() {
 
   socket.on("call:mute", data => {
     activeCall.peerMuted = !!data.muted;
+    if (activeCall.peerMuted) activeCall.peerSpeaking = false;
+    updateCallMuteUi();
+  });
+
+  socket.on("call:speaking", data => {
+    activeCall.peerSpeaking = !!data.speaking;
     updateCallMuteUi();
   });
 
@@ -997,10 +1090,7 @@ boot();
 // Settings glass tabs
 document.querySelectorAll(".settings-tab").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".settings-tab").forEach(x => x.classList.remove("active"));
-    document.querySelectorAll(".settings-page").forEach(x => x.classList.remove("active"));
-    btn.classList.add("active");
-    document.querySelector(`.settings-page[data-page="${btn.dataset.tab}"]`)?.classList.add("active");
+    setSettingsTab(btn.dataset.tab);
   });
 });
 const settingsProfileBtn = document.getElementById("settingsOpenProfile");
