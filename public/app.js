@@ -11,7 +11,7 @@ let activeScope = null;
 let replyTarget = null;
 let typingTimer = null;
 let settings = JSON.parse(localStorage.getItem("chorusSettings") || '{"messageVolume":65,"callVolume":100,"micId":"","speakerId":""}');
-let activeCall = { pc:null, localStream:null, screenStream:null, scope:null, scopeId:null, peerId:null, incoming:null, pendingIce:[], muted:false };
+let activeCall = { pc:null, localStream:null, screenStream:null, scope:null, scopeId:null, peerId:null, incoming:null, pendingIce:[], muted:false, wantsScreen:false, connected:false };
 
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -268,7 +268,7 @@ async function openChat(chatId) {
 async function loadMessages(scope, id, scroll = true) {
   socket.emit("watch:scope", { scope, scopeId: id });
   const data = await api(`/api/messages/${scope}/${id}`);
-  $("messages").innerHTML = data.messages.map(messageHTML).join("");
+  $("messages").innerHTML = data.messages.length ? data.messages.map(messageHTML).join("") : `<div class="empty-chat"><h3>No messages yet</h3><p>Say something to start the conversation.</p></div>`;
   if (scroll) scrollMessages();
   renderPinned();
 }
@@ -280,34 +280,58 @@ function appendMessage(msg) {
 }
 
 function messageHTML(msg) {
-  const controls = Number(msg.sender_id) === Number(me.id)
-    ? `<button type="button" onclick="editMessage(${msg.id})">edit</button><button type="button" onclick="deleteMessage(${msg.id})">delete</button>`
-    : "";
-  const reactions = (msg.reactions || []).map(r => `<button type="button" onclick="reactMessage(${msg.id}, '${r.emoji}')">${r.emoji} ${r.count}</button>`).join("");
-  const replyBlock = msg.reply_preview ? `<div class="reply-preview">↩ ${esc(msg.reply_preview.display_name)}: ${esc(msg.reply_preview.body)}</div>` : "";
-  const pinnedLabel = msg.pinned ? `<span class="status-chip">pinned</span>` : "";
-  return `
-    <div class="msg" id="msg-${msg.id}">
-      <img class="avatar" src="${msg.avatar}" alt="">
-      <div class="bubble">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <b>${esc(msg.display_name)}</b>
-          <small class="muted">${new Date(msg.created_at).toLocaleString()}${msg.edited ? " · edited" : ""}</small>
-          ${pinnedLabel}
-        </div>
-        ${replyBlock}
-        <p>${esc(msg.body)}</p>
-        <div class="message-actions">
-          ${reactions}
-          <button type="button" onclick="replyTo(${msg.id}, '${esc(msg.display_name).replace(/'/g, "\\'")}')">reply</button>
-          <button type="button" onclick="pinMessage(${msg.id})">${msg.pinned ? 'unpin' : 'pin'}</button>
-          <button type="button" onclick="reactMessage(${msg.id}, '❤️')">❤️</button>
-          <button type="button" onclick="reactMessage(${msg.id}, '😭')">😭</button>
-          <button type="button" onclick="reactMessage(${msg.id}, '🔥')">🔥</button>
-          ${controls}
+  const mine = Number(msg.sender_id) === Number(me.id);
+  const isDeleted = !!msg.deleted;
+  const bodyText = esc(msg.body || "").replace(/\n/g, "<br>");
+  const time = new Date(msg.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const edited = msg.edited ? '<span class="msg-edited">edited</span>' : '';
+  const reactions = (msg.reactions || []).map(r => `<button class="reaction-chip" type="button" onclick="reactMessage(${msg.id}, '${r.emoji}')">${r.emoji} <span>${r.count}</span></button>`).join("");
+  const controls = `
+    <button type="button" onclick="replyTo(${msg.id}, '${esc(msg.display_name).replace(/'/g, "\'")}')">Reply</button>
+    <button type="button" onclick="pinMessage(${msg.id})">${msg.pinned ? 'Unpin' : 'Pin'}</button>
+    <button type="button" onclick="reactMessage(${msg.id}, '❤️')">❤️</button>
+    <button type="button" onclick="reactMessage(${msg.id}, '😭')">😭</button>
+    <button type="button" onclick="reactMessage(${msg.id}, '🔥')">🔥</button>
+    ${mine ? `<button type="button" onclick="editMessage(${msg.id})">Edit</button><button type="button" onclick="deleteMessage(${msg.id})">Delete</button>` : ''}
+  `;
+
+  const replyBlock = msg.reply_preview ? `
+    <div class="reply-inline">
+      <span>↪</span>
+      <b>${esc(msg.reply_preview.display_name)}</b>
+      <small>${esc(msg.reply_preview.body || '').slice(0, 120)}</small>
+    </div>
+  ` : '';
+
+  const systemLike = /^you missed a call/i.test(String(msg.body || '')) || /^call /i.test(String(msg.body || ''));
+  if (systemLike) {
+    return `
+      <div class="msg system" id="msg-${msg.id}">
+        <div class="system-line">
+          <span class="system-icon">📞</span>
+          <span class="system-copy">${bodyText}</span>
+          <small>${time}</small>
         </div>
       </div>
-    </div>
+    `;
+  }
+
+  return `
+    <article class="msg ${mine ? 'mine' : ''} ${isDeleted ? 'deleted' : ''}" id="msg-${msg.id}">
+      <img class="avatar" src="${msg.avatar || '/user-default.svg'}" alt="">
+      <div class="msg-main">
+        <div class="msg-head">
+          <b class="msg-name">${esc(msg.display_name)}</b>
+          <small class="msg-time">${time}</small>
+          ${msg.pinned ? '<span class="msg-badge">Pinned</span>' : ''}
+          ${edited}
+        </div>
+        ${replyBlock}
+        <div class="msg-body">${bodyText}</div>
+        <div class="msg-reactions">${reactions}</div>
+      </div>
+      <div class="message-actions">${controls}</div>
+    </article>
   `;
 }
 
@@ -317,10 +341,11 @@ function scrollMessages() {
 }
 
 function renderPinned() {
-  const cards = [...$("messages").querySelectorAll(".msg")].filter(el => el.innerHTML.includes("pinned")).map(el => {
-    const name = el.querySelector("b")?.textContent || "";
-    const body = el.querySelector("p")?.textContent || "";
-    return `<div class="pin-card"><div class="row-meta"><b>${esc(name)}</b><small>${esc(body.slice(0, 120))}</small></div></div>`;
+  const cards = [...$("messages").querySelectorAll(".msg .msg-badge")].map(badge => {
+    const root = badge.closest('.msg');
+    const name = root?.querySelector('.msg-name')?.textContent || "";
+    const body = root?.querySelector('.msg-body')?.textContent || "";
+    return `<div class="pin-card"><div class="row-meta"><b>${esc(name)}</b><small>${esc((body || '').slice(0, 120))}</small></div></div>`;
   });
   $("pinnedList").innerHTML = cards.join("") || `<p class="muted tiny">No pinned messages yet.</p>`;
 }
@@ -545,12 +570,19 @@ $("speakerSelect").onchange = e => { settings.speakerId = e.target.value; saveSe
 
 async function iceConfig() {
   const data = await api("/api/ice");
-  return { iceServers: data.iceServers, iceCandidatePoolSize: 10 };
+  const fallback = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:global.stun.twilio.com:3478" }
+  ];
+  const iceServers = [...(data.iceServers || []), ...fallback];
+  return { iceServers, iceCandidatePoolSize: 10 };
 }
-async function getUserMediaStream() {
+async function getUserMediaStream(withVideo = false) {
   return navigator.mediaDevices.getUserMedia({
     audio: { deviceId: settings.micId ? { exact: settings.micId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    video: true
+    video: withVideo ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false
   });
 }
 async function createPeer(targetId) {
@@ -564,20 +596,35 @@ async function createPeer(targetId) {
     $("remoteAudio").srcObject = stream;
     $("remoteAudio").volume = settings.callVolume / 100;
     if ($("remoteAudio").setSinkId && settings.speakerId) $("remoteAudio").setSinkId(settings.speakerId).catch(() => {});
-    $("remoteVideo").srcObject = stream;
-    $("remoteVideo").play().catch(() => {});
-    $("callStatus").textContent = "connected";
+    $("remoteAudio").play().catch(() => {});
+    const hasVideo = stream.getVideoTracks().length > 0;
+    $("remoteVideo").srcObject = hasVideo ? stream : null;
+    if (hasVideo) $("remoteVideo").play().catch(() => {});
+    $("callStatus").textContent = hasVideo ? "voice + screen connected" : "voice connected";
   };
-  pc.onconnectionstatechange = () => {
-    if (pc.connectionState === "connected") $("callStatus").textContent = "connected";
-    if (["failed","disconnected","closed"].includes(pc.connectionState)) $("callStatus").textContent = pc.connectionState;
+  pc.onconnectionstatechange = async () => {
+    if (pc.connectionState === "connected") {
+      activeCall.connected = true;
+      $("callStatus").textContent = "connected";
+      if (activeCall.wantsScreen && !activeCall.screenStream) {
+        try { await startScreenshare(); } catch {}
+      }
+    }
+    if (["failed","disconnected","closed"].includes(pc.connectionState)) {
+      $("callStatus").textContent = pc.connectionState;
+      if (pc.connectionState === 'failed') toast('Call connection failed. If this keeps happening, add TURN variables to your host.');
+    }
   };
   return pc;
 }
-async function attachLocalMedia() {
-  activeCall.localStream = await getUserMediaStream();
-  $("localVideo").srcObject = activeCall.localStream;
-  $("localVideo").play().catch(() => {});
+async function attachLocalMedia(withVideo = false) {
+  activeCall.localStream = await getUserMediaStream(withVideo);
+  if (withVideo) {
+    $("localVideo").srcObject = activeCall.localStream;
+    $("localVideo").play().catch(() => {});
+  } else {
+    $("localVideo").srcObject = null;
+  }
   activeCall.localStream.getTracks().forEach(track => activeCall.pc.addTrack(track, activeCall.localStream));
 }
 function showCall(title, status) {
@@ -597,20 +644,22 @@ function resetCall(send = true) {
   try { activeCall.pc?.close(); } catch {}
   activeCall.localStream?.getTracks()?.forEach(t => t.stop());
   activeCall.screenStream?.getTracks()?.forEach(t => t.stop());
-  activeCall = { pc:null, localStream:null, screenStream:null, scope:null, scopeId:null, peerId:null, incoming:null, pendingIce:[], muted:false };
-  $("localVideo").srcObject = null; $("remoteVideo").srcObject = null; $("callModal").classList.add("hidden"); $("incomingControls").classList.add("hidden"); $("toggleScreenBtn").textContent = "Start Screen Share";
+  activeCall = { pc:null, localStream:null, screenStream:null, scope:null, scopeId:null, peerId:null, incoming:null, pendingIce:[], muted:false, wantsScreen:false, connected:false };
+  $("localVideo").srcObject = null; $("remoteVideo").srcObject = null; $("remoteAudio").srcObject = null; $("callModal").classList.add("hidden"); $("incomingControls").classList.add("hidden"); $("toggleScreenBtn").textContent = "Share screen"; $("muteBtn").textContent = "Mute";
 }
 $("callBtn").onclick = () => startCall(false);
 $("screenShareBtn").onclick = () => startCall(true);
 async function startCall(withScreen) {
-  if (!activeScope || activeScope.type !== "chat" || !activeChat || activeChat.type !== "dm") return toast("Calls are set for one-on-one DMs in this build.");
+  if (!activeScope || activeScope.type !== "chat" || !activeChat || activeChat.type !== "dm") return toast("Calls are available in one-on-one DMs.");
   const target = getCallTarget();
   if (!target) return toast("No user found for this call.");
   activeCall.scope = activeScope.type;
   activeCall.scopeId = activeScope.id;
   activeCall.peerId = target.id;
-  showCall(`Calling ${target.display_name}`, withScreen ? "ringing with screen share" : "ringing");
-  socket.emit("call:invite", { scope: activeScope.type, scopeId: activeScope.id, targetId: target.id, media: withScreen ? "screen" : "camera" });
+  activeCall.wantsScreen = !!withScreen;
+  activeCall.connected = false;
+  showCall(`Calling ${target.display_name}`, withScreen ? "ringing... will share screen after connect" : "ringing...");
+  socket.emit("call:invite", { scope: activeScope.type, scopeId: activeScope.id, targetId: target.id, media: withScreen ? "screen" : "audio" });
 }
 $("acceptCallBtn").onclick = () => {
   const incoming = activeCall.incoming;
@@ -633,18 +682,23 @@ $("toggleScreenBtn").onclick = async () => {
   if (!activeCall.pc) return toast("Start a call first.");
   if (!activeCall.screenStream) {
     try {
-      activeCall.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-      const track = activeCall.screenStream.getVideoTracks()[0];
-      const sender = activeCall.pc.getSenders().find(s => s.track && s.track.kind === "video");
-      if (sender) await sender.replaceTrack(track);
-      $("localVideo").srcObject = activeCall.screenStream;
-      $("toggleScreenBtn").textContent = "Stop Screen Share";
-      track.onended = () => stopScreenshare();
+      await startScreenshare();
     } catch (err) { toast("Screen share cancelled."); }
   } else {
     await stopScreenshare();
   }
 };
+async function startScreenshare() {
+  activeCall.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  const track = activeCall.screenStream.getVideoTracks()[0];
+  let sender = activeCall.pc.getSenders().find(s => s.track && s.track.kind === "video");
+  if (sender) await sender.replaceTrack(track);
+  else activeCall.pc.addTrack(track, activeCall.screenStream);
+  $("localVideo").srcObject = activeCall.screenStream;
+  $("localVideo").play().catch(() => {});
+  $("toggleScreenBtn").textContent = "Stop sharing";
+  track.onended = () => stopScreenshare();
+}
 async function stopScreenshare() {
   if (!activeCall.screenStream) return;
   activeCall.screenStream.getTracks().forEach(t => t.stop());
@@ -653,7 +707,7 @@ async function stopScreenshare() {
   const sender = activeCall.pc?.getSenders().find(s => s.track && s.track.kind === "video");
   if (cameraTrack && sender) await sender.replaceTrack(cameraTrack);
   $("localVideo").srcObject = activeCall.localStream;
-  $("toggleScreenBtn").textContent = "Start Screen Share";
+  $("toggleScreenBtn").textContent = "Share screen";
 }
 
 function wireCallSocket() {
@@ -662,17 +716,17 @@ function wireCallSocket() {
     activeCall.scopeId = data.scopeId;
     activeCall.peerId = data.from.id;
     activeCall.incoming = data;
-    showCall(`Incoming call from ${data.from.display_name}`, data.media === "screen" ? "incoming screen share call" : "incoming call");
+    showCall(`Incoming call from ${data.from.display_name}`, data.media === "screen" ? "incoming call + screen share" : "incoming voice call");
     $("incomingControls").classList.remove("hidden");
   });
 
   socket.on("call:accepted", async data => {
     try {
-      showCall(`Call with ${data.from.display_name}`, "connecting");
+      showCall(`Call with ${data.from.display_name}`, "connecting voice...");
       activeCall.peerId = data.from.id;
       activeCall.pc = await createPeer(data.from.id);
       activeCall.scope = data.scope; activeCall.scopeId = data.scopeId;
-      await attachLocalMedia();
+      await attachLocalMedia(false);
       const offer = await activeCall.pc.createOffer();
       await activeCall.pc.setLocalDescription(offer);
       socket.emit("call:offer", { scope: data.scope, scopeId: data.scopeId, targetId: data.from.id, offer });
@@ -683,7 +737,7 @@ function wireCallSocket() {
     try {
       activeCall.scope = data.scope; activeCall.scopeId = data.scopeId; activeCall.peerId = data.fromUserId;
       activeCall.pc = await createPeer(data.fromUserId);
-      await attachLocalMedia();
+      await attachLocalMedia(false);
       await activeCall.pc.setRemoteDescription(new RTCSessionDescription(data.offer));
       for (const c of activeCall.pendingIce) await activeCall.pc.addIceCandidate(new RTCIceCandidate(c));
       activeCall.pendingIce = [];
