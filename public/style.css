@@ -1167,3 +1167,186 @@ body{background:#0a0b0f !important;color:var(--text) !important;}
 .inline-editor{display:flex;gap:8px;align-items:flex-start;margin-top:6px}
 .inline-editor textarea{flex:1;min-height:42px;resize:vertical;background:#111217;border:1px solid rgba(255,255,255,.18);border-radius:10px;color:#fff;padding:9px 10px;font:inherit}
 .inline-editor button{border:1px solid rgba(255,255,255,.18);border-radius:10px;background:#1b1c22;color:#fff;padding:8px 10px;font-weight:800}
+
+
+/* Friends tab + bottom-aligned messages */
+.friends-section{display:none !important;}
+.friends-tab-open{
+  width:auto !important;
+  min-width:72px !important;
+  padding:0 12px !important;
+  font-size:12px !important;
+  font-weight:800 !important;
+}
+.friends-tab{
+  position:fixed;
+  left:398px;
+  top:18px;
+  bottom:18px;
+  width:min(350px, calc(100vw - 430px));
+  z-index:35;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  padding:16px;
+  background:#0c0d12;
+  border:1px solid var(--line);
+  border-radius:20px;
+  box-shadow:0 24px 80px rgba(0,0,0,.55);
+}
+.friends-tab.hidden{display:none !important;}
+.friends-tab-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding-bottom:12px;
+  border-bottom:1px solid var(--line);
+}
+.friends-tab-head h2{margin:0;font-size:24px;letter-spacing:-.04em;}
+.friends-tab-head .icon-btn{
+  width:38px;
+  height:38px;
+  border-radius:10px;
+  background:#191c24;
+  border:1px solid var(--line2);
+  color:#f4f6fb;
+}
+.friends-add-card{
+  display:grid;
+  gap:8px;
+  padding:14px;
+  border-radius:16px;
+  background:#11141b;
+  border:1px solid var(--line);
+}
+.friends-add-card h3{margin:0;font-size:15px;}
+.friends-add-card p{margin:0;color:#9097aa;font-size:13px;line-height:1.35;}
+.friends-tab-section{display:grid;gap:8px;min-height:0;}
+.friends-tab-section.current-friends{flex:1;}
+.friends-tab .list,.friends-tab .requests{overflow:auto;}
+.friends-tab .request-card{display:grid;grid-template-columns:40px minmax(0,1fr) auto auto;}
+.messages{
+  display:flex !important;
+  flex-direction:column !important;
+}
+.messages::before{
+  content:"";
+  margin-top:auto;
+}
+.messages .empty-chat,.messages .empty-state{margin:auto !important;}
+
+@media (max-width: 980px){
+  .friends-tab{
+    left:74px;
+    right:10px;
+    top:10px;
+    bottom:10px;
+    width:auto;
+    z-index:45;
+  }
+}
+
+
+/* Discord-style DM tabs */
+.sidebar-header .friends-tab-open{display:none !important;}
+.dm-tabs{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  padding:10px 12px 12px;
+  border-bottom:1px solid var(--line);
+}
+.dm-tab-btn{
+  width:100%;
+  height:42px;
+  padding:0 10px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  justify-content:flex-start;
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  color:#aeb0b8;
+  box-shadow:none;
+  font-size:15px;
+  font-weight:700;
+  text-align:left;
+}
+.dm-tab-btn:hover,.dm-tab-btn.active{
+  transform:none;
+  background:#1f2025;
+  color:#f5f5f6;
+}
+.dm-tab-btn .tab-icon{
+  width:20px;
+  display:grid;
+  place-items:center;
+  opacity:.85;
+}
+.dm-tab-btn em{
+  margin-left:auto;
+  padding:2px 7px;
+  border-radius:999px;
+  background:#f5f5f5;
+  color:#050505;
+  font-size:10px;
+  font-style:normal;
+  text-transform:uppercase;
+}
+.dm-tab-btn.muted-tab{color:#8b8d96;}
+.dm-home-section{padding-top:12px !important;}
+.friends-inner-tabs{
+  display:flex;
+  gap:8px;
+  padding:4px;
+  border-radius:12px;
+  background:#07080b;
+  border:1px solid var(--line);
+}
+.friends-inner-tabs button{
+  flex:1;
+  height:34px;
+  padding:0 10px;
+  border:0;
+  border-radius:9px;
+  background:transparent;
+  color:#9ca1ad;
+  font-size:12px;
+  font-weight:900;
+  box-shadow:none;
+}
+.friends-inner-tabs button:hover,.friends-inner-tabs button.active{
+  transform:none;
+  background:#1f2026;
+  color:#fff;
+}
+.friends-tab.show-add #friendsAddPanel{display:grid;}
+.friends-tab.show-add .friends-tab-section{display:none;}
+.friends-tab.show-list #friendsAddPanel{display:none;}
+.friends-tab.show-list .friends-tab-section:first-of-type{display:none;}
+.friends-tab.show-requests #friendsAddPanel{display:none;}
+.friends-tab.show-requests .current-friends{display:none;}
+.friends-tab.show-requests .friends-tab-section{display:grid;}
+
+/* Server view should replace the DM screen, not stack under it */
+#app.server-mode .dm-tabs,
+#app.server-mode .dm-home-section{
+  display:none !important;
+}
+#app.server-mode #serverChannelsSection{
+  display:flex !important;
+}
+#app.dm-mode #serverChannelsSection{
+  display:none !important;
+}
+#app.server-mode .sidebar-header{
+  border-bottom:1px solid var(--line) !important;
+}
+#app.server-mode .sidebar-header .kicker::after{
+  content:" server";
+}
+#app.server-mode #newGroupBtn{
+  display:none !important;
+}
