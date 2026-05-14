@@ -120,13 +120,19 @@ function connectSocket() {
 async function refreshEverything() {
   await Promise.all([refreshSpaces(), refreshChats(), refreshFriends()]);
   if (!activeScope) {
-    const firstSpace = spaces[0];
-    if (firstSpace) {
-      activeSpace = firstSpace;
-      activeChannel = firstSpace.channels[0] || null;
-      if (activeChannel) openChannel(activeChannel.id);
-    } else if (chats[0]) {
+    if (chats[0]) {
       openChat(chats[0].id);
+    } else {
+      setRoomHeader("Your messages", "Add a friend or create a group to start talking.", "/logo-mark.svg");
+      $("messages").innerHTML = `
+        <div class="empty-state">
+          <img src="/logo-mark.svg" alt="">
+          <h2>No messages yet</h2>
+          <p>Add a friend by username, accept a request, or make a group chat. Your private chats will live here first.</p>
+        </div>
+      `;
+      renderPinned();
+      renderMembers();
     }
   }
 }
@@ -144,12 +150,13 @@ async function refreshSpaces() {
 }
 
 function renderSpaceSidebar() {
-  $("activeSpaceName").textContent = activeSpace ? activeSpace.name : "chorus";
-  $("channelList").innerHTML = activeSpace ? activeSpace.channels.map(ch => `
+  $("activeSpaceName").textContent = "messages";
+  const allChannels = spaces.flatMap(space => (space.channels || []).map(ch => ({ ...ch, spaceName: space.name })));
+  $("channelList").innerHTML = allChannels.length ? allChannels.map(ch => `
     <button class="row-btn ${activeChannel && Number(activeChannel.id) === Number(ch.id) ? 'active' : ''}" type="button" onclick="openChannel(${ch.id})">
-      <div class="row-meta"><b># ${esc(ch.name)}</b><small>${esc(ch.kind)}</small></div>
+      <div class="row-meta"><b># ${esc(ch.name)}</b><small>${esc(ch.spaceName)}</small></div>
     </button>
-  `).join("") : "";
+  `).join("") : `<div class="soft-empty">No spaces yet. Tap + to create one.</div>`;
 }
 
 async function refreshChats() {
@@ -214,7 +221,7 @@ async function openChannel(channelId) {
   activeChat = null;
   activeScope = { type: "channel", id: activeChannel.id };
   $("sidebar").classList.remove("open");
-  setRoomHeader(`# ${activeChannel.name}`, `${activeSpace?.name || 'Space'} channel`, "/logo-mark.svg");
+  setRoomHeader(`# ${activeChannel.name}`, `${activeChannel.spaceName || activeSpace?.name || "Space"} channel`, "/logo-mark.svg");
   await loadMessages("channel", activeChannel.id);
   renderSpaceSidebar();
   renderMembers();
@@ -693,3 +700,21 @@ window.editMessage = editMessage;
 window.deleteMessage = deleteMessage;
 
 boot();
+
+
+// Settings glass tabs
+document.querySelectorAll(".settings-tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".settings-tab").forEach(x => x.classList.remove("active"));
+    document.querySelectorAll(".settings-page").forEach(x => x.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelector(`.settings-page[data-page="${btn.dataset.tab}"]`)?.classList.add("active");
+  });
+});
+const settingsProfileBtn = document.getElementById("settingsOpenProfile");
+if (settingsProfileBtn) {
+  settingsProfileBtn.addEventListener("click", () => {
+    document.getElementById("settingsModal")?.classList.add("hidden");
+    document.getElementById("profileModal")?.classList.remove("hidden");
+  });
+}
