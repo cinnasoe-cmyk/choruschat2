@@ -484,44 +484,11 @@ app.post("/api/spaces/:spaceId/invite", requireAuth, (req, res) => {
   const target = data.users.find(u => Number(u.id) === targetId || u.username === normalizeUsername(req.body.username));
   if (!target) return res.status(404).json({ error: "User not found." });
   if (!areFriends(req.session.userId, target.id) && Number(space.owner_id) !== Number(req.session.userId)) return res.status(403).json({ error: "You can only invite friends." });
-
-  const dmId = getOrCreateDM(req.session.userId, target.id);
-  const alreadyMember = (space.members || []).map(Number).includes(Number(target.id));
-  const msg = {
-    id: data.nextMessageId++,
-    scope: "chat",
-    scope_id: dmId,
-    sender_id: req.session.userId,
-    body: `[[space-invite:${space.id}:${space.name}]]`,
-    invite: { type: "space", space_id: space.id, space_name: space.name, already_member: alreadyMember },
-    attachments: [],
-    edited: 0,
-    deleted: 0,
-    pinned: 0,
-    reply_to: null,
-    created_at: new Date().toISOString()
-  };
-  data.messages.push(msg);
+  if (!(space.members || []).includes(Number(target.id))) space.members.push(Number(target.id));
   saveData();
-  const decorated = decorateMessage(msg);
-  notifyChat(dmId, "message:new", decorated);
-  notifyUser(target.id, "chats:update", {});
-  notifyUser(req.session.userId, "chats:update", {});
-  res.json({ ok: true, chatId: dmId, invite: msg.invite });
-});
-
-app.post("/api/spaces/:spaceId/join", requireAuth, (req, res) => {
-  const spaceId = Number(req.params.spaceId);
-  const space = spaceById(spaceId);
-  if (!space) return res.status(404).json({ error: "Server not found." });
-  if (!(space.members || []).map(Number).includes(Number(req.session.userId))) {
-    space.members = space.members || [];
-    space.members.push(Number(req.session.userId));
-    saveData();
-  }
   notifySpace(space.id, "spaces:update", {});
-  notifyUser(req.session.userId, "spaces:update", {});
-  res.json({ ok: true, space: listSpaceSummaries(req.session.userId).find(s => Number(s.id) === spaceId) });
+  notifyUser(target.id, "spaces:update", {});
+  res.json({ ok: true, member: publicUser(target.id) });
 });
 
 app.post("/api/spaces/:spaceId/kick", requireAuth, (req, res) => {
