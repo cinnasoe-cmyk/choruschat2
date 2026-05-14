@@ -1,7 +1,7 @@
 {
-  "name": "chorus-railway-safe",
-  "version": "5.0.0",
-  "description": "Chorus Discord-style chat, Railway-safe JSON storage, and clean WebRTC calls",
+  "name": "chorus-render-ready",
+  "version": "6.0.0",
+  "description": "Chorus Discord-style chat app ready for Render hosting",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
