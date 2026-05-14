@@ -1,7 +1,7 @@
 {
-  "name": "chorus-emo-minimal-ui",
+  "name": "chorus-glass-dm-home",
   "version": "7.0.0",
-  "description": "Chorus - minimal black and white browser chat app with calls and screen sharing",
+  "description": "Chorus - glassy minimal chat app with DM-first home, calls, and screen sharing",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
