@@ -28,16 +28,20 @@ const defaultData = {
   reactions: []
 };
 
+function cloneDefaultData() {
+  return JSON.parse(JSON.stringify(defaultData));
+}
+
 function readData() {
   try {
     if (!fs.existsSync(DB_FILE)) {
       fs.writeFileSync(DB_FILE, JSON.stringify(defaultData, null, 2));
     }
-    const data = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
-    return { ...defaultData, ...data };
+    const raw = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+    return { ...cloneDefaultData(), ...raw };
   } catch (err) {
     console.error("Failed to read data file:", err);
-    return structuredClone(defaultData);
+    return cloneDefaultData();
   }
 }
 
@@ -96,8 +100,8 @@ function getOrCreateDM(a, b) {
     id: data.nextChatId++,
     type: "dm",
     name: "",
-    owner_id: a,
-    members: [a, b],
+    owner_id: Number(a),
+    members: [Number(a), Number(b)],
     created_at: new Date().toISOString()
   };
   data.chats.push(chat);
@@ -110,7 +114,8 @@ function chatSummary(chatId, viewerId) {
   if (!chat) return null;
 
   const members = chat.members.map(publicUser).filter(Boolean);
-  const last = data.messages.filter(m => Number(m.chat_id) === Number(chat.id)).at(-1) || null;
+  const messages = data.messages.filter(m => Number(m.chat_id) === Number(chat.id));
+  const last = messages.length ? messages[messages.length - 1] : null;
 
   let title = chat.name || "Group";
   let avatar = "/default-avatar.svg";
@@ -155,6 +160,8 @@ function notifyChat(chatId, event, payload) {
 }
 
 const app = express();
+app.set("trust proxy", 1);
+
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: true, credentials: true }, maxHttpBufferSize: 1e7 });
 
@@ -162,7 +169,12 @@ const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || "change-this-secret",
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, sameSite: "lax", secure: false, maxAge: 1000 * 60 * 60 * 24 * 30 }
+  cookie: {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 1000 * 60 * 60 * 24 * 30
+  }
 });
 
 app.use(express.json({ limit: "2mb" }));
@@ -267,8 +279,8 @@ app.post("/api/friends/request", requireAuth, (req, res) => {
   } else {
     data.friends.push({
       id: data.nextFriendId++,
-      requester_id: req.session.userId,
-      addressee_id: target.id,
+      requester_id: Number(req.session.userId),
+      addressee_id: Number(target.id),
       status: "pending",
       created_at: new Date().toISOString()
     });
@@ -341,7 +353,7 @@ app.post("/api/chats/group", requireAuth, (req, res) => {
     id: data.nextChatId++,
     type: "group",
     name: String(req.body.name || "Group").trim().slice(0, 40) || "Group",
-    owner_id: req.session.userId,
+    owner_id: Number(req.session.userId),
     members,
     created_at: new Date().toISOString()
   };
@@ -369,8 +381,9 @@ app.delete("/api/chats/:id/messages", requireAuth, (req, res) => {
   const chatId = Number(req.params.id);
   if (!canAccessChat(req.session.userId, chatId)) return res.status(403).json({ error: "No access." });
 
+  const removedIds = new Set(data.messages.filter(m => Number(m.chat_id) === chatId).map(m => Number(m.id)));
   data.messages = data.messages.filter(m => Number(m.chat_id) !== chatId);
-  data.reactions = data.reactions.filter(r => !data.messages.some(m => Number(m.id) === Number(r.message_id)));
+  data.reactions = data.reactions.filter(r => !removedIds.has(Number(r.message_id)));
   saveData();
 
   notifyChat(chatId, "messages:cleared", { chatId });
@@ -409,7 +422,7 @@ io.on("connection", socket => {
     const message = {
       id: data.nextMessageId++,
       chat_id: chatId,
-      sender_id: uid,
+      sender_id: Number(uid),
       body,
       edited: 0,
       deleted: 0,
@@ -461,7 +474,7 @@ io.on("connection", socket => {
     });
 
     if (index >= 0) data.reactions.splice(index, 1);
-    else data.reactions.push({ message_id: message.id, user_id: uid, emoji });
+    else data.reactions.push({ message_id: message.id, user_id: Number(uid), emoji });
 
     saveData();
     notifyChat(message.chat_id, "message:update", messageWithUser(message.id));
@@ -474,7 +487,7 @@ io.on("connection", socket => {
     if (!targetId) return;
     if (!["decline", "end"].includes(event) && (!canAccessChat(uid, chatId) || !canAccessChat(targetId, chatId))) return;
 
-    const out = { chatId, from: publicUser(uid), fromUserId: uid };
+    const out = { chatId, from: publicUser(uid), fromUserId: Number(uid) };
     if (payload.offer) out.offer = payload.offer;
     if (payload.answer) out.answer = payload.answer;
     if (payload.candidate) out.candidate = payload.candidate;
