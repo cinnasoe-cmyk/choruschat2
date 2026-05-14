@@ -25,7 +25,8 @@ let activeCall = {
   peerSpeaking: false,
   speakingTimer: null,
   speakingContext: null,
-  connected: false
+  connected: false,
+  accepting: false
 };
 
 const $ = id => document.getElementById(id);
@@ -339,32 +340,6 @@ function messageHTML(msg) {
       <small>${esc(msg.reply_preview.body || '').slice(0, 120)}</small>
     </div>
   ` : '';
-
-  const inviteMatch = String(msg.body || '').match(/^\[\[space-invite:(\d+):(.+?)\]\]$/);
-  const invite = msg.invite || (inviteMatch ? { type: "space", space_id: Number(inviteMatch[1]), space_name: inviteMatch[2] } : null);
-  if (invite && invite.type === "space") {
-    const spaceId = Number(invite.space_id);
-    const alreadyInServer = spaces.some(s => Number(s.id) === spaceId);
-    const title = esc(invite.space_name || "Server invite");
-    const senderText = mine ? "You sent a server invite" : `${esc(msg.display_name)} invited you to join`;
-    return `
-      <article class="msg server-invite-msg ${mine ? 'mine' : ''}" id="msg-${msg.id}">
-        <img class="avatar" src="${msg.avatar || '/user-default.svg'}" alt="">
-        <div class="msg-main">
-          <div class="msg-head"><b class="msg-name">${esc(msg.display_name)}</b><small class="msg-time">${time}</small></div>
-          <div class="server-invite-card">
-            <div class="server-invite-icon"><img src="/logo-mark.svg" alt=""></div>
-            <div class="server-invite-copy">
-              <small>${senderText}</small>
-              <b>${title}</b>
-              <span>Click join to enter the server.</span>
-            </div>
-            <button type="button" class="server-invite-join" onclick="joinSpaceInvite(${spaceId}, this)" ${alreadyInServer ? 'disabled' : ''}>${alreadyInServer ? 'Joined' : 'Join'}</button>
-          </div>
-        </div>
-      </article>
-    `;
-  }
 
   const callSystemLike = /^you missed a call/i.test(String(msg.body || '')) || /^call /i.test(String(msg.body || '')) || /started a call|call ended|ended a call/i.test(String(msg.body || ''));
   if (callSystemLike) {
@@ -908,7 +883,7 @@ function resetCall(send = true) {
   activeCall.localStream?.getTracks()?.forEach(track => track.stop());
   activeCall.screenStream?.getTracks()?.forEach(track => track.stop());
   stopSpeakingMonitor();
-  activeCall = { pc:null, localStream:null, screenStream:null, chatId:null, peerId:null, incoming:null, pendingIce:[], muted:false, peerMuted:false, speaking:false, peerSpeaking:false, speakingTimer:null, speakingContext:null, connected:false };
+  activeCall = { pc:null, localStream:null, screenStream:null, chatId:null, peerId:null, incoming:null, pendingIce:[], muted:false, peerMuted:false, speaking:false, peerSpeaking:false, speakingTimer:null, speakingContext:null, connected:false, accepting:false };
   $("localVideo").srcObject = null;
   $("remoteVideo").srcObject = null;
   $("remoteAudio").srcObject = null;
@@ -947,33 +922,40 @@ async function startCall() {
   }
 }
 
-$("acceptCallBtn").onclick = async () => {
+$("acceptCallBtn").onclick = async (event) => {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
   const incoming = activeCall.incoming;
-  if (!incoming) return;
-  const btn = $("acceptCallBtn");
-  if (btn) btn.disabled = true;
+  if (!incoming || activeCall.accepting) return;
+
+  activeCall.accepting = true;
+  const acceptBtn = $("acceptCallBtn");
+  const declineBtn = $("declineCallBtn");
+  if (acceptBtn) acceptBtn.disabled = true;
+  if (declineBtn) declineBtn.disabled = true;
+
   try {
     setCallStatus("getting microphone");
     await ensureLocalAudio();
     startSpeakingMonitor();
-    activeCall.chatId = incoming.chatId;
-    activeCall.peerId = incoming.from.id || incoming.fromUserId;
-    socket.emit("call:accept", { chatId: incoming.chatId, targetId: activeCall.peerId });
+
+    // Important: accepting must never emit a decline if mic permission is slow or fails.
+    // A decline should only happen when the user clicks the red decline button.
+    socket.emit("call:accept", { chatId: incoming.chatId, targetId: incoming.from.id });
     $("incomingControls").classList.add("hidden");
-    activeCall.incoming = null;
     setCallStatus("connecting");
   } catch (err) {
-    // Do not auto-decline just because the browser blocks or delays microphone access.
-    // Keep the incoming call open so the user can try Accept again or manually decline.
-    toast(err.message || "Microphone permission was blocked.");
-    setCallStatus("incoming voice call");
-    $("incomingControls").classList.remove("hidden");
-  } finally {
-    if (btn) btn.disabled = false;
+    activeCall.accepting = false;
+    if (acceptBtn) acceptBtn.disabled = false;
+    if (declineBtn) declineBtn.disabled = false;
+    toast(err.message || "Microphone permission was blocked. Allow microphone access, then click accept again.");
+    setCallStatus("microphone blocked — allow access and accept again");
   }
 };
 
-$("declineCallBtn").onclick = () => {
+$("declineCallBtn").onclick = (event) => {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
   if (activeCall.incoming) socket.emit("call:decline", { chatId: activeCall.incoming.chatId, targetId: activeCall.incoming.from.id });
   resetCall(false);
 };
@@ -1003,6 +985,11 @@ function wireCallSocket() {
     activeCall.chatId = data.chatId;
     activeCall.peerId = data.from.id;
     activeCall.incoming = data;
+    activeCall.accepting = false;
+    const acceptBtn = $("acceptCallBtn");
+    const declineBtn = $("declineCallBtn");
+    if (acceptBtn) acceptBtn.disabled = false;
+    if (declineBtn) declineBtn.disabled = false;
     showCall(`Incoming call from ${data.from.display_name}`, "incoming voice call", true);
   });
 
@@ -1015,7 +1002,7 @@ function wireCallSocket() {
       const offer = await activeCall.pc.createOffer();
       await activeCall.pc.setLocalDescription(offer);
       socket.emit("call:offer", { chatId: data.chatId, targetId: data.from.id, offer });
-    } catch (err) { toast(err.message || "Could not start call."); resetCall(false); }
+    } catch (err) { toast(err.message || "Could not start call."); resetCall(true); }
   });
 
   socket.on("call:offer", async data => {
@@ -1029,7 +1016,7 @@ function wireCallSocket() {
       await activeCall.pc.setLocalDescription(answer);
       socket.emit("call:answer", { chatId: data.chatId, targetId: data.fromUserId, answer });
       setCallStatus("connecting");
-    } catch (err) { toast(err.message || "Could not answer call."); resetCall(false); }
+    } catch (err) { toast(err.message || "Could not answer call."); resetCall(true); }
   });
 
   socket.on("call:answer", async data => {
@@ -1145,24 +1132,11 @@ async function inviteFriendToServer(userId) {
   if (!activeSpace) return;
   try {
     await api(`/api/spaces/${activeSpace.id}/invite`, { method:"POST", body: JSON.stringify({ userId }) });
-    toast("Server invite sent in your DM.");
-    await refreshChats();
+    toast("Friend added to server.");
+    await refreshSpaces();
     renderServerManageModal();
     renderMembers();
   } catch (err) { toast(err.message); }
-}
-
-async function joinSpaceInvite(spaceId, btn) {
-  try {
-    if (btn) { btn.disabled = true; btn.textContent = "Joining..."; }
-    await api(`/api/spaces/${spaceId}/join`, { method:"POST" });
-    await refreshSpaces();
-    if (btn) btn.textContent = "Joined";
-    toast("Joined server.");
-  } catch (err) {
-    if (btn) { btn.disabled = false; btn.textContent = "Join"; }
-    toast(err.message || "Could not join server.");
-  }
 }
 
 async function kickServerMember(userId) {
@@ -1243,7 +1217,6 @@ window.editMessage = editMessage;
 window.deleteMessage = deleteMessage;
 window.deleteChannel = deleteChannel;
 window.inviteFriendToServer = inviteFriendToServer;
-window.joinSpaceInvite = joinSpaceInvite;
 window.kickServerMember = kickServerMember;
 
 boot();
