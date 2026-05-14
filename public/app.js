@@ -340,6 +340,32 @@ function messageHTML(msg) {
     </div>
   ` : '';
 
+  const inviteMatch = String(msg.body || '').match(/^\[\[space-invite:(\d+):(.+?)\]\]$/);
+  const invite = msg.invite || (inviteMatch ? { type: "space", space_id: Number(inviteMatch[1]), space_name: inviteMatch[2] } : null);
+  if (invite && invite.type === "space") {
+    const spaceId = Number(invite.space_id);
+    const alreadyInServer = spaces.some(s => Number(s.id) === spaceId);
+    const title = esc(invite.space_name || "Server invite");
+    const senderText = mine ? "You sent a server invite" : `${esc(msg.display_name)} invited you to join`;
+    return `
+      <article class="msg server-invite-msg ${mine ? 'mine' : ''}" id="msg-${msg.id}">
+        <img class="avatar" src="${msg.avatar || '/user-default.svg'}" alt="">
+        <div class="msg-main">
+          <div class="msg-head"><b class="msg-name">${esc(msg.display_name)}</b><small class="msg-time">${time}</small></div>
+          <div class="server-invite-card">
+            <div class="server-invite-icon"><img src="/logo-mark.svg" alt=""></div>
+            <div class="server-invite-copy">
+              <small>${senderText}</small>
+              <b>${title}</b>
+              <span>Click join to enter the server.</span>
+            </div>
+            <button type="button" class="server-invite-join" onclick="joinSpaceInvite(${spaceId}, this)" ${alreadyInServer ? 'disabled' : ''}>${alreadyInServer ? 'Joined' : 'Join'}</button>
+          </div>
+        </div>
+      </article>
+    `;
+  }
+
   const callSystemLike = /^you missed a call/i.test(String(msg.body || '')) || /^call /i.test(String(msg.body || '')) || /started a call|call ended|ended a call/i.test(String(msg.body || ''));
   if (callSystemLike) {
     return `
@@ -924,17 +950,26 @@ async function startCall() {
 $("acceptCallBtn").onclick = async () => {
   const incoming = activeCall.incoming;
   if (!incoming) return;
+  const btn = $("acceptCallBtn");
+  if (btn) btn.disabled = true;
   try {
     setCallStatus("getting microphone");
     await ensureLocalAudio();
     startSpeakingMonitor();
-    socket.emit("call:accept", { chatId: incoming.chatId, targetId: incoming.from.id });
+    activeCall.chatId = incoming.chatId;
+    activeCall.peerId = incoming.from.id || incoming.fromUserId;
+    socket.emit("call:accept", { chatId: incoming.chatId, targetId: activeCall.peerId });
     $("incomingControls").classList.add("hidden");
+    activeCall.incoming = null;
     setCallStatus("connecting");
   } catch (err) {
+    // Do not auto-decline just because the browser blocks or delays microphone access.
+    // Keep the incoming call open so the user can try Accept again or manually decline.
     toast(err.message || "Microphone permission was blocked.");
-    socket.emit("call:decline", { chatId: incoming.chatId, targetId: incoming.from.id });
-    resetCall(false);
+    setCallStatus("incoming voice call");
+    $("incomingControls").classList.remove("hidden");
+  } finally {
+    if (btn) btn.disabled = false;
   }
 };
 
@@ -980,7 +1015,7 @@ function wireCallSocket() {
       const offer = await activeCall.pc.createOffer();
       await activeCall.pc.setLocalDescription(offer);
       socket.emit("call:offer", { chatId: data.chatId, targetId: data.from.id, offer });
-    } catch (err) { toast(err.message || "Could not start call."); resetCall(true); }
+    } catch (err) { toast(err.message || "Could not start call."); resetCall(false); }
   });
 
   socket.on("call:offer", async data => {
@@ -994,7 +1029,7 @@ function wireCallSocket() {
       await activeCall.pc.setLocalDescription(answer);
       socket.emit("call:answer", { chatId: data.chatId, targetId: data.fromUserId, answer });
       setCallStatus("connecting");
-    } catch (err) { toast(err.message || "Could not answer call."); resetCall(true); }
+    } catch (err) { toast(err.message || "Could not answer call."); resetCall(false); }
   });
 
   socket.on("call:answer", async data => {
@@ -1110,11 +1145,24 @@ async function inviteFriendToServer(userId) {
   if (!activeSpace) return;
   try {
     await api(`/api/spaces/${activeSpace.id}/invite`, { method:"POST", body: JSON.stringify({ userId }) });
-    toast("Friend added to server.");
-    await refreshSpaces();
+    toast("Server invite sent in your DM.");
+    await refreshChats();
     renderServerManageModal();
     renderMembers();
   } catch (err) { toast(err.message); }
+}
+
+async function joinSpaceInvite(spaceId, btn) {
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = "Joining..."; }
+    await api(`/api/spaces/${spaceId}/join`, { method:"POST" });
+    await refreshSpaces();
+    if (btn) btn.textContent = "Joined";
+    toast("Joined server.");
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = "Join"; }
+    toast(err.message || "Could not join server.");
+  }
 }
 
 async function kickServerMember(userId) {
@@ -1195,6 +1243,7 @@ window.editMessage = editMessage;
 window.deleteMessage = deleteMessage;
 window.deleteChannel = deleteChannel;
 window.inviteFriendToServer = inviteFriendToServer;
+window.joinSpaceInvite = joinSpaceInvite;
 window.kickServerMember = kickServerMember;
 
 boot();
