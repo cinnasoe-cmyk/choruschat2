@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: chorus
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: STORAGE_DIR
+        value: /var/data
+    disk:
+      name: chorus-data
+      mountPath: /var/data
+      sizeGB: 1
