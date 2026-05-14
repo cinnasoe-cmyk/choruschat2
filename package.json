@@ -1,7 +1,7 @@
 {
-  "name": "chorus-glass-dm-home",
+  "name": "chorus-dm-home-storage-fix",
   "version": "7.0.0",
-  "description": "Chorus - glassy minimal chat app with DM-first home, calls, and screen sharing",
+  "description": "Chorus - DM-first glass chat app with fixed storage, clean profile defaults, calls, and screen sharing",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
