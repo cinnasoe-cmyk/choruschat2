@@ -1281,9 +1281,11 @@ body{background:#0a0b0f !important;color:var(--text) !important;}
 }
 .dm-tab-btn .tab-icon{
   width:20px;
+  height:20px;
   display:grid;
   place-items:center;
-  opacity:.85;
+  opacity:.9;
+  flex:0 0 20px;
 }
 .dm-tab-btn em{
   margin-left:auto;
@@ -1349,4 +1351,189 @@ body{background:#0a0b0f !important;color:var(--text) !important;}
 }
 #app.server-mode #newGroupBtn{
   display:none !important;
+}
+
+
+/* Final polish: friends slide-out, top-aligned friends, Discord-like call dock */
+.friends-tab{
+  display:flex !important;
+  opacity:1;
+  visibility:visible;
+  pointer-events:auto;
+  transform:translateX(0);
+  transition:transform .22s cubic-bezier(.2,.9,.2,1), opacity .18s ease, visibility .18s ease;
+  will-change:transform, opacity;
+}
+.friends-tab.hidden{
+  display:flex !important;
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  transform:translateX(-28px);
+}
+.friends-tab-section.current-friends{
+  flex:1 1 auto !important;
+  min-height:0 !important;
+  display:grid !important;
+  grid-template-rows:auto minmax(0,1fr) !important;
+  align-content:start !important;
+  align-items:start !important;
+}
+.friends-tab.show-requests .current-friends{display:none !important;}
+#friendList{
+  align-content:start !important;
+  align-items:start !important;
+  justify-content:stretch !important;
+  margin:0 !important;
+  padding:0 !important;
+  height:auto !important;
+  min-height:0 !important;
+}
+#friendList .row-btn{align-self:start !important;}
+
+.call-modal{
+  position:fixed !important;
+  left:350px !important;
+  right:260px !important;
+  top:68px !important;
+  height:225px !important;
+  z-index:34 !important;
+  padding:0 !important;
+  display:block !important;
+  background:#050506 !important;
+  border:0 !important;
+  border-bottom:1px solid #15161a !important;
+  border-radius:0 !important;
+  box-shadow:none !important;
+  backdrop-filter:none !important;
+  pointer-events:auto;
+}
+.call-modal.hidden{display:none !important;}
+.call-card{
+  width:100% !important;
+  height:100% !important;
+  display:grid !important;
+  grid-template-rows:1fr auto !important;
+  place-items:center !important;
+  gap:10px !important;
+  padding:22px 18px 14px !important;
+  background:transparent !important;
+  border:0 !important;
+  border-radius:0 !important;
+  box-shadow:none !important;
+}
+.call-top{
+  position:absolute !important;
+  left:16px !important;
+  top:12px !important;
+  right:16px !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:space-between !important;
+  pointer-events:none;
+}
+.call-top h2{font-size:15px !important;margin:0 !important;color:#fff !important;}
+.call-top p{font-size:12px !important;margin:2px 0 0 !important;color:#888b94 !important;}
+.call-top #endCallBtn{display:none !important;}
+.call-body{display:grid !important;place-items:center !important;width:100% !important;}
+.call-stage{display:grid !important;place-items:center !important;min-height:92px !important;}
+.call-avatar-pair{display:flex !important;align-items:center !important;justify-content:center !important;gap:18px !important;}
+.call-avatar-pair img{
+  width:74px !important;
+  height:74px !important;
+  border-radius:50% !important;
+  object-fit:cover !important;
+  border:1px solid rgba(255,255,255,.10) !important;
+  box-shadow:0 10px 35px rgba(0,0,0,.45) !important;
+}
+.video-stack{display:none !important;}
+.call-controls{
+  display:flex !important;
+  justify-content:center !important;
+  align-items:center !important;
+  gap:10px !important;
+  margin:0 !important;
+}
+.call-controls button,.incoming button{
+  min-width:52px !important;
+  height:42px !important;
+  padding:0 14px !important;
+  border-radius:12px !important;
+  background:#17181d !important;
+  color:#f5f5f5 !important;
+  border:1px solid #262832 !important;
+  box-shadow:none !important;
+}
+.call-controls button:hover,.incoming button:hover{background:#22242b !important;transform:none !important;}
+.call-controls #toggleScreenBtn{display:none !important;}
+.call-controls::after{
+  content:"✕";
+  width:54px;
+  height:42px;
+  display:grid;
+  place-items:center;
+  border-radius:12px;
+  background:#e23c4f;
+  color:#fff;
+  font-weight:900;
+  cursor:pointer;
+}
+.incoming{
+  position:absolute !important;
+  bottom:14px !important;
+  display:flex !important;
+  gap:10px !important;
+}
+.incoming.hidden{display:none !important;}
+.incoming .primary-btn{background:#f2f2f2 !important;color:#050505 !important;}
+.incoming .danger{background:#e23c4f !important;color:#fff !important;}
+@media (max-width:1180px){.call-modal{right:0 !important;}}
+@media (max-width:900px){.call-modal{left:0 !important;right:0 !important;top:0 !important;height:210px !important;z-index:70 !important;}}
+/* Make the real hang-up button part of the Discord-like call dock controls */
+.call-top #endCallBtn{
+  display:grid !important;
+  position:absolute !important;
+  top:147px !important;
+  right:calc(50% - 178px) !important;
+  width:58px !important;
+  height:42px !important;
+  padding:0 !important;
+  place-items:center !important;
+  border-radius:12px !important;
+  background:#e23c4f !important;
+  border:1px solid #e23c4f !important;
+  color:#fff !important;
+  font-size:0 !important;
+  pointer-events:auto !important;
+  box-shadow:none !important;
+}
+.call-top #endCallBtn::before{content:"☎";font-size:18px;transform:rotate(135deg);display:block;}
+.call-top #endCallBtn:hover{transform:none !important;background:#f04b5d !important;}
+.call-controls::after{display:none !important;}
+
+/* Custom sidebar/friend request icons */
+.dm-tab-btn .tab-icon img{
+  width:20px;
+  height:20px;
+  display:block;
+  color:currentColor;
+  filter:brightness(0) saturate(100%) invert(70%) sepia(4%) saturate(396%) hue-rotate(198deg) brightness(96%) contrast(85%);
+}
+.dm-tab-btn:hover .tab-icon img,.dm-tab-btn.active .tab-icon img{
+  filter:brightness(0) saturate(100%) invert(100%);
+}
+.friends-inner-tabs button{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+}
+.friends-inner-tabs button img{
+  width:17px;
+  height:17px;
+  display:block;
+  filter:brightness(0) saturate(100%) invert(74%) sepia(4%) saturate(381%) hue-rotate(198deg) brightness(93%) contrast(88%);
+}
+.friends-inner-tabs button.active img,.friends-inner-tabs button:hover img{
+  filter:brightness(0) saturate(100%) invert(100%);
 }
