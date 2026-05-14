@@ -150,13 +150,17 @@ async function refreshSpaces() {
 }
 
 function renderSpaceSidebar() {
-  $("activeSpaceName").textContent = "messages";
-  const allChannels = spaces.flatMap(space => (space.channels || []).map(ch => ({ ...ch, spaceName: space.name })));
-  $("channelList").innerHTML = allChannels.length ? allChannels.map(ch => `
-    <button class="row-btn ${activeChannel && Number(activeChannel.id) === Number(ch.id) ? 'active' : ''}" type="button" onclick="openChannel(${ch.id})">
-      <div class="row-meta"><b># ${esc(ch.name)}</b><small>${esc(ch.spaceName)}</small></div>
-    </button>
-  `).join("") : `<div class="soft-empty">No spaces yet. Tap + to create one.</div>`;
+  if (activeSpace) {
+    $("activeSpaceName").textContent = activeSpace.name;
+    $("channelList").innerHTML = (activeSpace.channels || []).length ? activeSpace.channels.map(ch => `
+      <button class="row-btn ${activeChannel && Number(activeChannel.id) === Number(ch.id) ? 'active' : ''}" type="button" onclick="openChannel(${ch.id})">
+        <div class="row-meta"><b># ${esc(ch.name)}</b><small>${esc(activeSpace.name)} channel</small></div>
+      </button>
+    `).join("") : `<div class="soft-empty">No channels yet. Tap + to create one.</div>`;
+  } else {
+    $("activeSpaceName").textContent = "messages";
+    $("channelList").innerHTML = `<div class="soft-empty">Select a server to view its channels.</div>`;
+  }
 }
 
 async function refreshChats() {
@@ -198,9 +202,23 @@ function refreshSidebarBits() {
 }
 
 function selectSpace(spaceId) {
-  activeSpace = spaces.find(s => Number(s.id) === Number(spaceId));
-  renderSpaceSidebar();
-  if (activeSpace?.channels?.[0]) openChannel(activeSpace.channels[0].id);
+  activeSpace = spaces.find(s => Number(s.id) === Number(spaceId)) || null;
+  activeChannel = null;
+  activeChat = null;
+  activeScope = activeSpace ? "space" : null;
+  renderAll();
+  if (activeSpace) {
+    setRoomHeader(activeSpace.name, "Select a channel from this server.", "/logo-mark.svg");
+    $("messages").innerHTML = `
+      <div class="empty-state">
+        <img src="/logo-mark.svg" alt="">
+        <h2>${esc(activeSpace.name)}</h2>
+        <p>Choose a channel on the left, or leave this server view by opening a DM.</p>
+      </div>
+    `;
+    renderPinned();
+    renderMembers();
+  }
 }
 
 function openDM(userId) {
@@ -228,6 +246,8 @@ async function openChannel(channelId) {
 }
 
 async function openChat(chatId) {
+  activeSpace = null;
+  activeChannel = null;
   activeChat = chats.find(c => Number(c.id) === Number(chatId));
   if (!activeChat) return;
   activeChannel = null;
