@@ -2360,3 +2360,250 @@ body{background:#0a0b0f !important;color:var(--text) !important;}
 .user-pop-avatar-wrap:has(.presence-dot.offline) > img{
   filter:saturate(.72) brightness(.82) !important;
 }
+
+/* FINAL FIX: keep Discord call controls below avatars, never overlapping */
+.message-panel > #callModal.call-modal,
+.message-panel > .call-modal{
+  height:248px !important;
+  min-height:248px !important;
+  max-height:248px !important;
+  overflow:hidden !important;
+  background:#050505 !important;
+  border-bottom:1px solid #17191f !important;
+}
+.message-panel > #callModal.call-modal .call-card,
+.message-panel > .call-modal .call-card{
+  position:relative !important;
+  width:100% !important;
+  height:100% !important;
+  min-height:0 !important;
+  max-height:none !important;
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:center !important;
+  justify-content:center !important;
+  gap:14px !important;
+  padding:40px 18px 16px !important;
+  overflow:hidden !important;
+  background:transparent !important;
+  border:0 !important;
+  box-shadow:none !important;
+}
+.message-panel > #callModal.call-modal .call-top,
+.message-panel > .call-modal .call-top{
+  position:absolute !important;
+  left:18px !important;
+  top:14px !important;
+  right:18px !important;
+  width:auto !important;
+  height:auto !important;
+  display:block !important;
+  pointer-events:none !important;
+  background:transparent !important;
+  border:0 !important;
+  padding:0 !important;
+  margin:0 !important;
+  transform:none !important;
+}
+.message-panel > #callModal.call-modal .call-body,
+.message-panel > .call-modal .call-body{
+  flex:0 0 auto !important;
+  width:100% !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  transform:none !important;
+  margin:0 !important;
+  padding:0 !important;
+  overflow:visible !important;
+}
+.message-panel > #callModal.call-modal .call-stage,
+.message-panel > .call-modal .call-stage{
+  min-height:86px !important;
+  height:86px !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  overflow:visible !important;
+}
+.message-panel > #callModal.call-modal .call-avatar-pair,
+.message-panel > .call-modal .call-avatar-pair{
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  gap:18px !important;
+  margin:0 !important;
+  padding:0 !important;
+  overflow:visible !important;
+}
+.message-panel > #callModal.call-modal .call-avatar-wrap,
+.message-panel > .call-modal .call-avatar-wrap{
+  position:relative !important;
+  width:78px !important;
+  height:78px !important;
+  flex:0 0 78px !important;
+  display:grid !important;
+  place-items:center !important;
+  overflow:visible !important;
+}
+.message-panel > #callModal.call-modal .call-avatar-wrap > img,
+.message-panel > #callModal.call-modal .call-avatar-pair > img,
+.message-panel > .call-modal .call-avatar-wrap > img,
+.message-panel > .call-modal .call-avatar-pair > img{
+  width:78px !important;
+  height:78px !important;
+  min-width:78px !important;
+  min-height:78px !important;
+  max-width:78px !important;
+  max-height:78px !important;
+  border-radius:50% !important;
+  object-fit:cover !important;
+  background:#101116 !important;
+  border:1px solid rgba(255,255,255,.14) !important;
+  box-shadow:0 12px 36px rgba(0,0,0,.58) !important;
+  transform:none !important;
+}
+.message-panel > #callModal.call-modal .call-controls,
+.message-panel > .call-modal .call-controls,
+.message-panel > #callModal.call-modal .incoming,
+.message-panel > .call-modal .incoming{
+  position:static !important;
+  left:auto !important;
+  right:auto !important;
+  top:auto !important;
+  bottom:auto !important;
+  transform:none !important;
+  width:auto !important;
+  height:auto !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  gap:10px !important;
+  margin:4px 0 0 !important;
+  padding:0 !important;
+  overflow:visible !important;
+}
+.message-panel > #callModal.call-modal.incoming-call .call-controls,
+.message-panel > .call-modal.incoming-call .call-controls,
+.message-panel > #callModal.call-modal .incoming.hidden,
+.message-panel > .call-modal .incoming.hidden{
+  display:none !important;
+}
+.message-panel > #callModal.call-modal .call-controls button,
+.message-panel > .call-modal .call-controls button,
+.message-panel > #callModal.call-modal .incoming button,
+.message-panel > .call-modal .incoming button,
+.message-panel > #callModal.call-modal #endCallBtn,
+.message-panel > .call-modal #endCallBtn{
+  position:static !important;
+  left:auto !important;
+  right:auto !important;
+  top:auto !important;
+  bottom:auto !important;
+  transform:none !important;
+  width:56px !important;
+  min-width:56px !important;
+  max-width:56px !important;
+  height:44px !important;
+  min-height:44px !important;
+  max-height:44px !important;
+  display:inline-grid !important;
+  place-items:center !important;
+  padding:0 !important;
+  margin:0 !important;
+  border-radius:14px !important;
+  font-size:0 !important;
+  line-height:1 !important;
+  overflow:hidden !important;
+  box-shadow:none !important;
+}
+.message-panel > #callModal.call-modal #endCallBtn,
+.message-panel > .call-modal #endCallBtn,
+.message-panel > #callModal.call-modal .incoming .decline,
+.message-panel > .call-modal .incoming .decline{
+  background:#e23c4f !important;
+  border:1px solid #e23c4f !important;
+  color:#fff !important;
+}
+.message-panel > #callModal.call-modal .incoming .accept,
+.message-panel > .call-modal .incoming .accept{
+  background:#35a865 !important;
+  border:1px solid #35a865 !important;
+  color:#fff !important;
+}
+.message-panel > #callModal.call-modal .call-controls button:not(#endCallBtn),
+.message-panel > .call-modal .call-controls button:not(#endCallBtn){
+  background:#17181d !important;
+  border:1px solid #282b33 !important;
+  color:#f5f5f6 !important;
+}
+.message-panel > #callModal.call-modal .call-controls button img,
+.message-panel > .call-modal .call-controls button img,
+.message-panel > #callModal.call-modal .incoming button img,
+.message-panel > .call-modal .incoming button img,
+.message-panel > #callModal.call-modal #endCallBtn img,
+.message-panel > .call-modal #endCallBtn img{
+  width:20px !important;
+  height:20px !important;
+  min-width:20px !important;
+  min-height:20px !important;
+  max-width:20px !important;
+  max-height:20px !important;
+  object-fit:contain !important;
+  border:0 !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  filter:brightness(0) invert(1) !important;
+}
+.message-panel > #callModal.call-modal .call-muted-badge,
+.message-panel > .call-modal .call-muted-badge{
+  right:-5px !important;
+  bottom:2px !important;
+  width:24px !important;
+  height:24px !important;
+  min-width:24px !important;
+  min-height:24px !important;
+  max-width:24px !important;
+  max-height:24px !important;
+  border-radius:50% !important;
+  display:grid !important;
+  place-items:center !important;
+  padding:0 !important;
+  overflow:hidden !important;
+  background:#ef4758 !important;
+  border:3px solid #050505 !important;
+  z-index:3 !important;
+}
+.message-panel > #callModal.call-modal .call-muted-badge.hidden,
+.message-panel > .call-modal .call-muted-badge.hidden{display:none !important;}
+.message-panel > #callModal.call-modal .call-muted-badge img,
+.message-panel > .call-modal .call-muted-badge img{
+  width:12px !important;
+  height:12px !important;
+  min-width:12px !important;
+  min-height:12px !important;
+  max-width:12px !important;
+  max-height:12px !important;
+  object-fit:contain !important;
+  border:0 !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  filter:brightness(0) invert(1) !important;
+}
+.message-panel > #callModal.call-modal .call-avatar-wrap.speaking > img,
+.message-panel > .call-modal .call-avatar-wrap.speaking > img{
+  border-color:#38d477 !important;
+  box-shadow:0 0 0 3px rgba(56,212,119,.95),0 0 28px rgba(56,212,119,.25),0 12px 36px rgba(0,0,0,.58) !important;
+}
+@media (max-width:900px){
+  .message-panel > #callModal.call-modal,
+  .message-panel > .call-modal{height:232px !important;min-height:232px !important;max-height:232px !important;}
+  .message-panel > #callModal.call-modal .call-card,
+  .message-panel > .call-modal .call-card{padding-top:38px !important;gap:12px !important;}
+  .message-panel > #callModal.call-modal .call-avatar-wrap,
+  .message-panel > .call-modal .call-avatar-wrap,
+  .message-panel > #callModal.call-modal .call-avatar-wrap > img,
+  .message-panel > .call-modal .call-avatar-wrap > img{width:70px !important;height:70px !important;min-width:70px !important;min-height:70px !important;max-width:70px !important;max-height:70px !important;}
+}
