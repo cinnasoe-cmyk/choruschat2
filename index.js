@@ -593,7 +593,32 @@ io.on("connection", socket => {
   }
 
   ["invite","accept","decline","offer","answer","ice","end"].forEach(name => {
-    socket.on(`call:${name}`, payload => relayCall(name, payload || {}));
+    socket.on(`call:${name}`, payload => {
+      payload = payload || {};
+      if (name === "invite") {
+        const chatId = Number(payload.chatId || payload.scopeId || 0);
+        const targetId = Number(payload.targetId || 0);
+        if (chatId && targetId && userCanAccessChat(uid, chatId) && userCanAccessChat(targetId, chatId)) {
+          const caller = publicUser(uid);
+          const msg = {
+            id: data.nextMessageId++,
+            scope: "chat",
+            scope_id: chatId,
+            sender_id: uid,
+            body: `Call started by ${caller?.display_name || "someone"}.`,
+            edited: 0,
+            deleted: 0,
+            pinned: 0,
+            reply_to: null,
+            created_at: new Date().toISOString()
+          };
+          data.messages.push(msg);
+          saveData();
+          notifyChat(chatId, "message:new", decorateMessage(msg));
+        }
+      }
+      relayCall(name, payload);
+    });
   });
 
   socket.on("disconnect", () => {});
