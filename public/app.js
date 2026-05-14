@@ -314,12 +314,12 @@ function messageHTML(msg) {
     </div>
   ` : '';
 
-  const systemLike = /^you missed a call/i.test(String(msg.body || '')) || /^call /i.test(String(msg.body || ''));
-  if (systemLike) {
+  const callSystemLike = /^you missed a call/i.test(String(msg.body || '')) || /^call /i.test(String(msg.body || ''));
+  if (callSystemLike) {
     return `
-      <div class="msg system" id="msg-${msg.id}">
+      <div class="msg system call-system" id="msg-${msg.id}">
         <div class="system-line">
-          <span class="system-icon">📞</span>
+          <span class="system-icon" aria-hidden="true">☎</span>
           <span class="system-copy">${bodyText}</span>
           <small>${time}</small>
         </div>
@@ -673,7 +673,7 @@ async function createPeer(peerId) {
     if (audio.setSinkId && settings.speakerId) audio.setSinkId(settings.speakerId).catch(() => {});
     audio.play().catch(() => toast("Click the call bar once to enable audio."));
     activeCall.connected = true;
-    $("callStatus").textContent = "connected";
+    setCallStatus("connected");
   };
 
   const updateState = () => {
@@ -681,12 +681,12 @@ async function createPeer(peerId) {
     if (!state) return;
     if (state === "connected" || state === "completed") {
       activeCall.connected = true;
-      $("callStatus").textContent = "connected";
+      setCallStatus("connected");
     } else if (["failed", "disconnected", "closed"].includes(state)) {
-      $("callStatus").textContent = state;
+      setCallStatus(state);
       if (state === "failed") toast("Call failed to connect. On Render, add TURN_URL, TURN_USERNAME, and TURN_PASSWORD if users are on different networks.");
     } else {
-      $("callStatus").textContent = state;
+      setCallStatus(state);
     }
   };
   pc.onconnectionstatechange = updateState;
@@ -696,12 +696,30 @@ async function createPeer(peerId) {
 }
 
 function showCall(title, status, incoming = false) {
-  $("callModal").classList.remove("hidden");
+  const callEl = $("callModal");
+  callEl.classList.remove("hidden", "ringing", "incoming-call", "connected-call");
+  const normalized = String(status || "").toLowerCase();
+  if (incoming) callEl.classList.add("incoming-call", "ringing");
+  else if (normalized.includes("ring") || normalized.includes("incoming") || normalized.includes("getting microphone")) callEl.classList.add("ringing");
+  else if (normalized.includes("connected")) callEl.classList.add("connected-call");
   $("incomingControls").classList.toggle("hidden", !incoming);
   $("callTitle").textContent = title;
   $("callStatus").textContent = status;
+  const peer = activeCall.incoming?.from || getCallTarget() || activeChat?.members?.find(m => Number(m.id) !== Number(me.id));
+  if ($("callSelfAvatar")) $("callSelfAvatar").src = me?.avatar || "/user-default.svg";
+  if ($("callPeerAvatar")) $("callPeerAvatar").src = peer?.avatar || activeChat?.avatar || "/user-default.svg";
   $("remoteVideo").style.display = "none";
   $("localVideo").style.display = "none";
+}
+
+function setCallStatus(status) {
+  if ($("callStatus")) $("callStatus").textContent = status;
+  const callEl = $("callModal");
+  if (!callEl) return;
+  callEl.classList.remove("ringing", "connected-call");
+  const normalized = String(status || "").toLowerCase();
+  if (normalized.includes("connected")) callEl.classList.add("connected-call");
+  else if (normalized.includes("ring") || normalized.includes("incoming") || normalized.includes("getting microphone") || normalized.includes("connecting")) callEl.classList.add("ringing");
 }
 
 function getCallTarget() {
@@ -742,7 +760,7 @@ async function startCall() {
     activeCall.peerId = target.id;
     showCall(`Calling ${target.display_name}`, "getting microphone", false);
     await ensureLocalAudio();
-    $("callStatus").textContent = "ringing";
+    setCallStatus("ringing");
     socket.emit("call:invite", { chatId: activeChat.id, targetId: target.id });
   } catch (err) {
     toast(err.message || "Microphone permission was blocked.");
@@ -754,11 +772,11 @@ $("acceptCallBtn").onclick = async () => {
   const incoming = activeCall.incoming;
   if (!incoming) return;
   try {
-    $("callStatus").textContent = "getting microphone";
+    setCallStatus("getting microphone");
     await ensureLocalAudio();
     socket.emit("call:accept", { chatId: incoming.chatId, targetId: incoming.from.id });
     $("incomingControls").classList.add("hidden");
-    $("callStatus").textContent = "connecting";
+    setCallStatus("connecting");
   } catch (err) {
     toast(err.message || "Microphone permission was blocked.");
     socket.emit("call:decline", { chatId: incoming.chatId, targetId: incoming.from.id });
@@ -816,7 +834,7 @@ function wireCallSocket() {
       const answer = await activeCall.pc.createAnswer();
       await activeCall.pc.setLocalDescription(answer);
       socket.emit("call:answer", { chatId: data.chatId, targetId: data.fromUserId, answer });
-      $("callStatus").textContent = "connecting";
+      setCallStatus("connecting");
     } catch (err) { toast(err.message || "Could not answer call."); resetCall(true); }
   });
 
@@ -825,7 +843,7 @@ function wireCallSocket() {
       if (!activeCall.pc) return;
       await activeCall.pc.setRemoteDescription(new RTCSessionDescription(data.answer));
       for (const c of activeCall.pendingIce.splice(0)) await activeCall.pc.addIceCandidate(new RTCIceCandidate(c));
-      $("callStatus").textContent = "connecting";
+      setCallStatus("connecting");
     } catch (err) { toast(err.message || "Could not connect call."); }
   });
 
