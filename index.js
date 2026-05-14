@@ -9,7 +9,7 @@ const session = require("express-session");
 const { Server } = require("socket.io");
 
 const PORT = process.env.PORT || 3000;
-const STORAGE_DIR = process.env.STORAGE_DIR || path.join(__dirname, "storage");
+const STORAGE_DIR = process.env.STORAGE_DIR || (fs.existsSync("/var/data") ? "/var/data" : path.join(__dirname, "storage"));
 const UPLOAD_DIR = path.join(STORAGE_DIR, "uploads");
 const DB_FILE = path.join(STORAGE_DIR, "chorus-data.json");
 
@@ -50,10 +50,38 @@ function readData() {
 }
 
 let data = readData();
+
+function removeLegacyAutoSpaces() {
+  const legacyIds = new Set();
+  for (const space of data.spaces || []) {
+    const owner = data.users.find(u => Number(u.id) === Number(space.owner_id));
+    const expected = owner ? `${owner.display_name}'s Space` : "";
+    const channels = data.channels.filter(c => Number(c.space_id) === Number(space.id));
+    const names = channels.map(c => c.name).sort().join(",");
+    const looksAuto = expected && space.name === expected && (names === "general,media" || names === "general");
+    if (looksAuto) legacyIds.add(Number(space.id));
+  }
+  if (!legacyIds.size) return;
+  const channelIds = new Set(data.channels.filter(c => legacyIds.has(Number(c.space_id))).map(c => Number(c.id)));
+  data.spaces = data.spaces.filter(s => !legacyIds.has(Number(s.id)));
+  data.channels = data.channels.filter(c => !channelIds.has(Number(c.id)));
+  data.messages = data.messages.filter(m => !(m.scope === "channel" && channelIds.has(Number(m.scope_id))));
+  data.reactions = data.reactions.filter(r => data.messages.some(m => Number(m.id) === Number(r.message_id)));
+  saveData();
+  console.log(`Removed ${legacyIds.size} legacy auto-created space(s).`);
+}
+removeLegacyAutoSpaces();
+
 function saveData() {
-  const temp = DB_FILE + ".tmp";
-  fs.writeFileSync(temp, JSON.stringify(data, null, 2));
-  fs.renameSync(temp, DB_FILE);
+  try {
+    fs.mkdirSync(STORAGE_DIR, { recursive: true });
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    const temp = DB_FILE + ".tmp";
+    fs.writeFileSync(temp, JSON.stringify(data, null, 2));
+    fs.renameSync(temp, DB_FILE);
+  } catch (err) {
+    console.error("Failed to save DB:", err);
+  }
 }
 
 function normalizeUsername(value) {
@@ -72,7 +100,7 @@ function publicUser(id) {
     username: user.username,
     display_name: user.display_name,
     bio: user.bio || "",
-    avatar: user.avatar || "/logo-mark.svg",
+    avatar: (!user.avatar || user.avatar === "/logo-mark.svg") ? "/user-default.svg" : user.avatar,
     status: user.status || "online",
     tagline: user.tagline || "Listening for echoes."
   };
@@ -216,6 +244,7 @@ function notifySpace(spaceId, event, payload) {
 
 const app = express();
 app.set("trust proxy", 1);
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: true, credentials: true }, maxHttpBufferSize: 2e7 });
 
@@ -265,12 +294,11 @@ app.post("/api/register", async (req, res) => {
     password_hash: await bcrypt.hash(password, 10),
     bio: "",
     tagline: "Listening for echoes.",
-    avatar: "/logo-mark.svg",
+    avatar: "/user-default.svg",
     status: "online",
     created_at: new Date().toISOString()
   };
   data.users.push(user);
-  defaultStarterSpace(user.id, user.display_name);
   saveData();
   req.session.userId = user.id;
   res.json({ user: publicUser(user.id) });
