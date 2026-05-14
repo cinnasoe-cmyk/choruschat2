@@ -1,11 +1,14 @@
 services:
   - type: web
-    name: chorus
+    name: choruschat
     env: node
     plan: free
     buildCommand: npm install
     startCommand: npm start
+    autoDeploy: true
     envVars:
+      - key: NODE_ENV
+        value: production
       - key: SESSION_SECRET
         generateValue: true
       - key: STORAGE_DIR
