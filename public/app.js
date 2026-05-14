@@ -20,6 +20,7 @@ let activeCall = {
   incoming: null,
   pendingIce: [],
   muted: false,
+  peerMuted: false,
   connected: false
 };
 
@@ -744,6 +745,7 @@ function showCall(title, status, incoming = false) {
   const peer = activeCall.incoming?.from || getCallTarget() || activeChat?.members?.find(m => Number(m.id) !== Number(me.id));
   if ($("callSelfAvatar")) $("callSelfAvatar").src = me?.avatar || "/user-default.svg";
   if ($("callPeerAvatar")) $("callPeerAvatar").src = peer?.avatar || activeChat?.avatar || "/user-default.svg";
+  updateCallMuteUi();
   $("remoteVideo").style.display = "none";
   $("localVideo").style.display = "none";
 }
@@ -754,6 +756,7 @@ function setCallStatus(status) {
   if (!callEl) return;
   callEl.classList.remove("ringing", "connected-call");
   const normalized = String(status || "").toLowerCase();
+  if (!normalized.includes("incoming")) callEl.classList.remove("incoming-call");
   if (normalized.includes("connected")) callEl.classList.add("connected-call");
   else if (normalized.includes("ring") || normalized.includes("incoming") || normalized.includes("getting microphone") || normalized.includes("connecting")) callEl.classList.add("ringing");
 }
@@ -765,12 +768,23 @@ function getCallTarget() {
   return null;
 }
 
+function updateCallMuteUi() {
+  const selfBadge = $("callSelfMuted");
+  const peerBadge = $("callPeerMuted");
+  if (selfBadge) selfBadge.classList.toggle("hidden", !activeCall.muted);
+  if (peerBadge) peerBadge.classList.toggle("hidden", !activeCall.peerMuted);
+  const muteSpan = $("muteBtn")?.querySelector("span");
+  const muteImg = $("muteBtn")?.querySelector("img");
+  if (muteSpan) muteSpan.textContent = activeCall.muted ? "Unmute" : "Mute";
+  if (muteImg) muteImg.src = activeCall.muted ? "/icons/mic-off.svg" : "/icons/mic.svg";
+}
+
 function resetCall(send = true) {
   if (send && activeCall.peerId && activeCall.chatId) socket.emit("call:end", { chatId: activeCall.chatId, targetId: activeCall.peerId });
   try { activeCall.pc?.close(); } catch {}
   activeCall.localStream?.getTracks()?.forEach(track => track.stop());
   activeCall.screenStream?.getTracks()?.forEach(track => track.stop());
-  activeCall = { pc:null, localStream:null, screenStream:null, chatId:null, peerId:null, incoming:null, pendingIce:[], muted:false, connected:false };
+  activeCall = { pc:null, localStream:null, screenStream:null, chatId:null, peerId:null, incoming:null, pendingIce:[], muted:false, peerMuted:false, connected:false };
   $("localVideo").srcObject = null;
   $("remoteVideo").srcObject = null;
   $("remoteAudio").srcObject = null;
@@ -781,6 +795,7 @@ function resetCall(send = true) {
   const muteImg = $("muteBtn")?.querySelector("img");
   if (muteSpan) muteSpan.textContent = "Mute";
   if (muteImg) muteImg.src = "/icons/mic.svg";
+  updateCallMuteUi();
 }
 
 $("callBtn").onclick = () => startCall();
@@ -831,12 +846,13 @@ $("declineCallBtn").onclick = () => {
 $("endCallBtn").onclick = () => resetCall(true);
 
 $("muteBtn").onclick = () => {
+  if (!activeCall.localStream) return toast("Join the call before muting.");
   activeCall.muted = !activeCall.muted;
-  activeCall.localStream?.getAudioTracks().forEach(track => track.enabled = !activeCall.muted);
-  const muteSpan = $("muteBtn")?.querySelector("span");
-  const muteImg = $("muteBtn")?.querySelector("img");
-  if (muteSpan) muteSpan.textContent = activeCall.muted ? "Unmute" : "Mute";
-  if (muteImg) muteImg.src = activeCall.muted ? "/icons/mic-off.svg" : "/icons/mic.svg";
+  activeCall.localStream.getAudioTracks().forEach(track => track.enabled = !activeCall.muted);
+  updateCallMuteUi();
+  if (activeCall.chatId && activeCall.peerId) {
+    socket.emit("call:mute", { chatId: activeCall.chatId, targetId: activeCall.peerId, muted: activeCall.muted });
+  }
 };
 
 $("toggleScreenBtn").onclick = () => toast("Simple voice calling is enabled. Screen share is not included in this version.");
@@ -895,6 +911,11 @@ function wireCallSocket() {
       if (activeCall.pc && activeCall.pc.remoteDescription) await activeCall.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
       else activeCall.pendingIce.push(data.candidate);
     } catch (err) { console.warn(err); }
+  });
+
+  socket.on("call:mute", data => {
+    activeCall.peerMuted = !!data.muted;
+    updateCallMuteUi();
   });
 
   socket.on("call:declined", () => { toast("Call declined."); resetCall(false); });
