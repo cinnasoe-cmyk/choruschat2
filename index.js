@@ -34,6 +34,8 @@ const defaultData = {
   callRooms: []
 };
 
+const onlineUsers = new Map();
+
 function fresh() {
   return JSON.parse(JSON.stringify(defaultData));
 }
@@ -92,16 +94,25 @@ function cleanText(v, len = 2000) {
   return String(v || "").trim().slice(0, len);
 }
 
+function normalizePresence(value) {
+  const v = String(value || "").toLowerCase();
+  if (v === "away") return "idle";
+  return ["online", "idle", "dnd", "offline"].includes(v) ? v : "offline";
+}
+
 function publicUser(id) {
   const user = data.users.find(u => Number(u.id) === Number(id));
   if (!user) return null;
+  const connected = onlineUsers.has(Number(id));
+  const savedStatus = normalizePresence(user.status || "offline");
+  const visibleStatus = connected ? (savedStatus === "offline" ? "online" : savedStatus) : "offline";
   return {
     id: user.id,
     username: user.username,
     display_name: user.display_name,
     bio: user.bio || "",
     avatar: (!user.avatar || user.avatar === "/logo-mark.svg") ? "/user-default.svg" : user.avatar,
-    status: user.status || "offline",
+    status: visibleStatus,
     tagline: user.tagline || "Listening for echoes."
   };
 }
@@ -331,7 +342,7 @@ app.put("/api/me", requireAuth, (req, res) => {
   me.display_name = cleanText(req.body.displayName || me.display_name, 32);
   me.bio = cleanText(req.body.bio || "", 220);
   me.tagline = cleanText(req.body.tagline || me.tagline || "", 80);
-  me.status = ["online", "idle", "dnd", "offline"].includes(req.body.status) ? req.body.status : me.status;
+  me.status = normalizePresence(req.body.status) !== "offline" ? normalizePresence(req.body.status) : (req.body.status === "offline" ? "offline" : me.status);
   saveData();
   res.json({ user: publicUser(me.id) });
 });
@@ -556,8 +567,6 @@ app.get("/api/ice", requireAuth, (req, res) => {
   res.json({ iceServers });
 });
 
-const onlineUsers = new Map();
-
 io.on("connection", socket => {
   const uid = Number(socket.request.session?.userId || 0);
   if (!uid) return socket.disconnect(true);
@@ -565,18 +574,21 @@ io.on("connection", socket => {
   const previousCount = onlineUsers.get(uid) || 0;
   onlineUsers.set(uid, previousCount + 1);
   const connectedUser = data.users.find(u => Number(u.id) === uid);
-  if (connectedUser && (!connectedUser.status || connectedUser.status === "offline")) {
-    connectedUser.status = "online";
-    saveData();
-    io.emit("presence:update", { userId: uid, status: connectedUser.status });
+  if (connectedUser) {
+    if (!connectedUser.status || connectedUser.status === "offline") {
+      connectedUser.status = "online";
+      saveData();
+    }
+    io.emit("presence:update", { userId: uid, status: publicUser(uid).status });
   }
 
   socket.on("presence:set", payload => {
     const me = data.users.find(u => Number(u.id) === uid);
     if (!me) return;
-    me.status = ["online","idle","dnd","offline"].includes(payload.status) ? payload.status : me.status;
+    const next = normalizePresence(payload.status);
+    me.status = next === "offline" ? "offline" : next;
     saveData();
-    io.emit("presence:update", { userId: uid, status: me.status });
+    io.emit("presence:update", { userId: uid, status: publicUser(uid).status });
   });
 
   socket.on("typing:start", payload => {
@@ -722,12 +734,7 @@ io.on("connection", socket => {
     if (count) onlineUsers.set(uid, count);
     else {
       onlineUsers.delete(uid);
-      const me = data.users.find(u => Number(u.id) === uid);
-      if (me && me.status !== "offline") {
-        me.status = "offline";
-        saveData();
-        io.emit("presence:update", { userId: uid, status: "offline" });
-      }
+      io.emit("presence:update", { userId: uid, status: "offline" });
     }
   });
 });
