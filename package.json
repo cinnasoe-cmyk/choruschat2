@@ -1,7 +1,7 @@
 {
-  "name": "chorus-discord-inspired-pro",
+  "name": "chorus-clean-ui-fix",
   "version": "7.0.0",
-  "description": "Chorus - Discord-inspired chat with servers, channels, DMs, calls, and screen sharing",
+  "description": "Chorus - clean social chat app with spaces, channels, DMs, calling, and screen sharing",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
