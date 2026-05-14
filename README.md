@@ -1,13 +1,13 @@
-# Chorus Railway Safe Rebuild
+# Chorus Render Ready
 
-This version removes SQLite/native database packages so Railway builds more reliably.
+Use these files for Render.
 
 ## GitHub root should contain
 
 ```txt
 index.js
 package.json
-railway.json
+render.yaml
 public/
 .env.example
 .gitignore
@@ -16,19 +16,33 @@ README.md
 
 Do not put these files inside an extra folder.
 
-## Railway variables
+## Render setup
+
+Build Command:
+
+```txt
+npm install
+```
+
+Start Command:
+
+```txt
+npm start
+```
+
+Environment variables:
 
 ```txt
 SESSION_SECRET=make-a-long-random-secret
-STORAGE_DIR=/app/storage
+STORAGE_DIR=/var/data
 ```
 
-## Railway volume
-
-Mount your volume to:
+Persistent Disk:
 
 ```txt
-/app/storage
+Name: chorus-data
+Mount Path: /var/data
+Size: 1 GB
 ```
 
 ## Optional for better calls
@@ -38,15 +52,3 @@ TURN_URL=turn:your-turn-host:3478
 TURN_USERNAME=your_username
 TURN_PASSWORD=your_password
 ```
-
-## Features
-
-- Discord-style full-screen UI
-- Mobile layout
-- Saved accounts/messages/profile pictures using JSON file storage
-- Friend requests
-- DMs and group chats
-- Profile picture uploads
-- Message edit/delete
-- Emoji reactions
-- Voice calls using WebRTC signaling
