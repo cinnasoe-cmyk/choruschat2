@@ -85,11 +85,22 @@ function renderSelf() {
   $("profilePreview").src = me.avatar;
   $("selfName").textContent = me.display_name;
   $("selfUsername").textContent = "@" + me.username;
-  $("selfStatus").textContent = me.status;
+  $("selfStatus").textContent = statusLabel(normalizeStatus(me.status));
   $("profileDisplay").value = me.display_name;
   $("profileTagline").value = me.tagline || "";
   $("profileBio").value = me.bio || "";
-  $("profileStatus").value = me.status || "online";
+  $("profileStatus").value = normalizeStatus(me.status || "online");
+}
+
+function updateKnownUserStatus(userId, status) {
+  const id = Number(userId);
+  const next = normalizeStatus(status);
+  const touch = user => { if (user && Number(user.id) === id) user.status = next; };
+  touch(me);
+  for (const f of friends || []) touch(f);
+  for (const c of chats || []) for (const m of (c.members || [])) touch(m);
+  if (activeChat?.members) for (const m of activeChat.members) touch(m);
+  if (activeSpace?.members) for (const m of activeSpace.members) touch(m);
 }
 
 function connectSocket() {
@@ -100,7 +111,8 @@ function connectSocket() {
   socket.on("chats:update", refreshChats);
   socket.on("spaces:update", refreshSpaces);
   socket.on("presence:update", ({ userId, status }) => {
-    if (Number(userId) === Number(me.id)) { me.status = status; renderSelf(); }
+    updateKnownUserStatus(userId, status);
+    if (Number(userId) === Number(me.id)) renderSelf();
     refreshFriends();
     refreshChats();
     refreshSpaces();
@@ -406,7 +418,9 @@ function renderMembers() {
 }
 
 function normalizeStatus(status) {
-  return ["online","idle","dnd","offline"].includes(String(status || "")) ? String(status) : "offline";
+  const value = String(status || "").toLowerCase();
+  if (value === "away") return "idle";
+  return ["online","idle","dnd","offline"].includes(value) ? value : "offline";
 }
 
 function statusColor(status) {
@@ -415,7 +429,7 @@ function statusColor(status) {
 }
 function statusLabel(status) {
   status = normalizeStatus(status);
-  return status === "dnd" ? "do not disturb" : status === "idle" ? "idle" : status === "offline" ? "offline" : "online";
+  return status === "dnd" ? "do not disturb" : status === "idle" ? "away" : status === "offline" ? "offline" : "online";
 }
 
 function replyTo(id, name) {
@@ -640,7 +654,7 @@ $("saveProfileBtn").onclick = async () => {
         displayName: $("profileDisplay").value,
         tagline: $("profileTagline").value,
         bio: $("profileBio").value,
-        status: $("profileStatus").value
+        status: normalizeStatus($("profileStatus").value)
       })
     });
     me = data.user;
