@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Chorus</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="auth" class="auth">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="logo">c</div>
+        <div>
+          <h1>chorus</h1>
+          <p>private chat for your circle</p>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button id="showLogin" class="active" type="button">Login</button>
+        <button id="showRegister" type="button">Register</button>
+      </div>
+
+      <form id="loginForm">
+        <input id="loginUsername" placeholder="username" autocomplete="username">
+        <input id="loginPassword" placeholder="password" type="password" autocomplete="current-password">
+        <button type="submit">Enter Chorus</button>
+      </form>
+
+      <form id="registerForm" class="hidden">
+        <input id="registerUsername" placeholder="claim username" autocomplete="username">
+        <input id="registerDisplay" placeholder="display name">
+        <input id="registerPassword" placeholder="password" type="password" autocomplete="new-password">
+        <button type="submit">Claim Account</button>
+      </form>
+
+      <p id="authError" class="error"></p>
+    </div>
+  </div>
+
+  <main id="app" class="app hidden">
+    <aside class="rail">
+      <button class="server-icon" type="button">c</button>
+      <button id="mobileMenu" class="server-icon mobile-only" type="button">☰</button>
+      <button id="openSettings" class="server-icon bottom" type="button">⚙</button>
+    </aside>
+
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-top">
+        <h2>chorus</h2>
+        <button id="newGroupBtn" type="button">＋</button>
+      </div>
+
+      <section>
+        <h3>Direct Messages</h3>
+        <div id="chatList" class="list"></div>
+      </section>
+
+      <section>
+        <h3>Friends</h3>
+        <div class="add-row">
+          <input id="friendUsername" placeholder="add username">
+          <button id="addFriendBtn" type="button">Add</button>
+        </div>
+        <div id="requests"></div>
+        <div id="friendList" class="list"></div>
+      </section>
+
+      <button id="selfPanel" class="self-panel" type="button">
+        <img id="selfAvatar" src="/default-avatar.svg" alt="">
+        <span>
+          <b id="selfName">user</b>
+          <small id="selfUsername">@user</small>
+        </span>
+      </button>
+    </aside>
+
+    <section class="chat">
+      <header class="topbar">
+        <button id="mobileBack" class="mobile-only" type="button">☰</button>
+        <img id="chatAvatar" src="/default-avatar.svg" alt="">
+        <div class="chat-title-box">
+          <h2 id="chatTitle">Select a chat</h2>
+          <p id="chatSubtitle">Add a friend to start talking.</p>
+        </div>
+        <button id="callBtn" type="button">Call</button>
+        <button id="clearChatBtn" class="danger" type="button">Clear</button>
+      </header>
+
+      <div id="messages" class="messages"></div>
+
+      <form id="composer" class="composer">
+        <button id="emojiBtn" type="button">☺</button>
+        <input id="messageInput" placeholder="Message Chorus" autocomplete="off">
+        <button type="submit">Send</button>
+      </form>
+    </section>
+  </main>
+
+  <div id="profileModal" class="modal hidden">
+    <div class="modal-card">
+      <button class="closeModal" type="button">×</button>
+      <h2>Your Profile</h2>
+      <img id="profilePreview" class="big-avatar" src="/default-avatar.svg" alt="">
+      <label class="file-button">
+        Upload Profile Picture
+        <input id="avatarFile" type="file" accept="image/*">
+      </label>
+      <input id="profileDisplay" placeholder="display name">
+      <textarea id="profileBio" placeholder="bio"></textarea>
+      <button id="saveProfileBtn" type="button">Save Profile</button>
+      <button id="logoutBtn" class="ghost" type="button">Logout</button>
+    </div>
+  </div>
+
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-card">
+      <button class="closeModal" type="button">×</button>
+      <h2>Settings</h2>
+      <label>Message Volume <input id="messageVolume" type="range" min="0" max="100"></label>
+      <label>Call Volume <input id="callVolume" type="range" min="0" max="100"></label>
+      <label>Microphone <select id="micSelect"></select></label>
+      <label>Speaker <select id="speakerSelect"></select></label>
+      <button id="refreshDevicesBtn" type="button">Refresh Devices</button>
+      <p class="hint">For the best calls, add TURN_URL, TURN_USERNAME, and TURN_PASSWORD in Render environment variables.</p>
+    </div>
+  </div>
+
+  <div id="groupModal" class="modal hidden">
+    <div class="modal-card">
+      <button class="closeModal" type="button">×</button>
+      <h2>New Group</h2>
+      <input id="groupName" placeholder="group name">
+      <div id="groupFriends" class="check-list"></div>
+      <button id="createGroupBtn" type="button">Create Group</button>
+    </div>
+  </div>
+
+  <div id="callModal" class="call hidden">
+    <div class="call-card">
+      <div class="call-top">
+        <div>
+          <h2 id="callTitle">Call</h2>
+          <p id="callStatus">starting</p>
+        </div>
+        <button id="endCallBtn" class="danger" type="button">End</button>
+      </div>
+
+      <div class="call-body">
+        <div class="pulse">
+          <img id="callAvatar" src="/default-avatar.svg" alt="">
+        </div>
+        <audio id="remoteAudio" autoplay playsinline></audio>
+      </div>
+
+      <div id="incomingControls" class="incoming hidden">
+        <button id="acceptCallBtn" type="button">Accept</button>
+        <button id="declineCallBtn" class="danger" type="button">Decline</button>
+      </div>
+
+      <button id="muteBtn" type="button">Mute</button>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
